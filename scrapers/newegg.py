@@ -8,7 +8,9 @@ from models import ComboDeal, Component
 
 logger = logging.getLogger(__name__)
 
+NEWEGG_BASE_URL = "https://www.newegg.com"
 NEWEGG_SEARCH_URL = "https://www.newegg.com/p/pl?d=cpu+motherboard+ram+combo+ddr5"
+MAX_PAGES = 10  # safety limit
 
 
 def _parse_price(text: str) -> float:
@@ -59,10 +61,16 @@ def _parse_ram_specs(name: str) -> dict:
     ddr_match = re.search(r"ddr(\d)", name_lower)
     if ddr_match:
         specs["ddr"] = int(ddr_match.group(1))
-    # Capacity in GB
-    cap_match = re.search(r"(\d+)\s*gb", name_lower)
-    if cap_match:
-        specs["capacity_gb"] = int(cap_match.group(1))
+    # Capacity in GB — handle kit formats like "2x16GB" or "2 x 16GB"
+    kit_match = re.search(r"(\d+)\s*x\s*(\d+)\s*gb", name_lower)
+    if kit_match:
+        sticks = int(kit_match.group(1))
+        per_stick = int(kit_match.group(2))
+        specs["capacity_gb"] = sticks * per_stick
+    else:
+        cap_match = re.search(r"(\d+)\s*gb", name_lower)
+        if cap_match:
+            specs["capacity_gb"] = int(cap_match.group(1))
     # Speed in MHz
     speed_match = re.search(r"ddr\d[- ]?(\d{4,5})", name_lower)
     if speed_match:
@@ -104,17 +112,24 @@ def parse_combo_item(raw: dict) -> ComboDeal:
         specs = {}
         if category == "ram":
             specs = _parse_ram_specs(name)
+            # Newegg search is DDR5-only; infer DDR5 if not found in abbreviated name
+            if "ddr" not in specs:
+                specs["ddr"] = 5
         components.append(Component(name=name, category=category, specs=specs))
 
     combo_type = _detect_combo_type(components)
     combo_price = _parse_price(raw.get("price", ""))
+
+    url = raw.get("url", "")
+    if url and url.startswith("/"):
+        url = NEWEGG_BASE_URL + url
 
     deal = ComboDeal(
         retailer="Newegg",
         combo_type=combo_type,
         components=components,
         combo_price=combo_price,
-        url=raw.get("url", ""),
+        url=url,
     )
 
     # Populate enriched fields
@@ -140,26 +155,40 @@ class NeweggScraper(BaseScraper):
         super().__init__(config)
 
     async def scrape(self) -> list[ComboDeal]:
-        """Search Newegg for CPU+MB+RAM combo deals."""
-        logger.info(f"[{self.retailer_name}] Navigating to {NEWEGG_SEARCH_URL}")
-        await self._page.goto(NEWEGG_SEARCH_URL, wait_until="domcontentloaded")
-        await self._delay()
-        await self._scroll_to_bottom()
-
+        """Search Newegg for CPU+MB+RAM combo deals across all pages."""
         deals = []
-        items = await self._page.query_selector_all(".item-cell")
-        logger.info(f"[{self.retailer_name}] Found {len(items)} raw items on page")
+        seen_urls = set()
 
-        for item in items:
-            try:
-                raw = await self._extract_combo_item(item)
-                if raw:
-                    deal = parse_combo_item(raw)
-                    if deal.combo_type != "OTHER":
-                        deals.append(deal)
-            except Exception as e:
-                logger.warning(f"[{self.retailer_name}] Failed to parse item: {e}")
-                continue
+        for page_num in range(1, MAX_PAGES + 1):
+            page_url = NEWEGG_SEARCH_URL if page_num == 1 else f"{NEWEGG_SEARCH_URL}&page={page_num}"
+            logger.info(f"[{self.retailer_name}] Navigating to {page_url}")
+            await self._page.goto(page_url, wait_until="domcontentloaded")
+            await self._delay()
+            await self._scroll_to_bottom()
+
+            items = await self._page.query_selector_all(".item-cell")
+            logger.info(f"[{self.retailer_name}] Found {len(items)} raw items on page {page_num}")
+
+            if not items:
+                break
+
+            page_deal_count = 0
+            for item in items:
+                try:
+                    raw = await self._extract_combo_item(item)
+                    if raw:
+                        deal = parse_combo_item(raw)
+                        if deal.combo_type != "OTHER" and deal.url not in seen_urls:
+                            seen_urls.add(deal.url)
+                            deals.append(deal)
+                            page_deal_count += 1
+                except Exception as e:
+                    logger.warning(f"[{self.retailer_name}] Failed to parse item: {e}")
+                    continue
+
+            # Stop if no combo deals found on this page (likely past last page)
+            if page_deal_count == 0:
+                break
 
         return deals
 

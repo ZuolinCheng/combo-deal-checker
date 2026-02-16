@@ -40,3 +40,86 @@ def test_parse_combo_item_cpu_ram_only():
 def test_newegg_scraper_init():
     scraper = NeweggScraper(Config())
     assert scraper.retailer_name == "NeweggScraper"
+
+
+# --- Bug #11: Relative URLs should be made absolute ---
+def test_parse_combo_item_relative_url_becomes_absolute():
+    """Newegg hrefs are relative — parse_combo_item should prepend base URL."""
+    raw = {
+        "title": "AMD Ryzen 7 9800X3D + ASUS X870E + G.SKILL 32GB DDR5-6000",
+        "price": "$899.99",
+        "url": "/Product/ComboDealDetails?ItemList=Combo.4853134",
+        "components": [
+            {"name": "AMD Ryzen 7 9800X3D", "category": "cpu"},
+            {"name": "ASUS X870E", "category": "motherboard"},
+            {"name": "G.SKILL 32GB DDR5-6000", "category": "ram"},
+        ],
+    }
+    deal = parse_combo_item(raw)
+    assert deal.url.startswith("https://www.newegg.com/")
+    assert "Combo.4853134" in deal.url
+
+
+def test_parse_combo_item_absolute_url_unchanged():
+    """Already-absolute URLs should be left alone."""
+    raw = {
+        "title": "Test combo",
+        "price": "$100",
+        "url": "https://www.newegg.com/combo/12345",
+        "components": [
+            {"name": "Test CPU", "category": "cpu"},
+            {"name": "Test RAM DDR5-6000 32GB", "category": "ram"},
+        ],
+    }
+    deal = parse_combo_item(raw)
+    assert deal.url == "https://www.newegg.com/combo/12345"
+
+
+# --- Bug #12: RAM capacity regex should handle kit formats ---
+def test_parse_ram_specs_kit_format_2x16():
+    """'2x16GB DDR5-6000' should parse total capacity as 32GB."""
+    from scrapers.newegg import _parse_ram_specs
+    specs = _parse_ram_specs("G.Skill Trident Z5 2x16GB DDR5-6000")
+    assert specs.get("capacity_gb") == 32
+
+
+def test_parse_ram_specs_kit_format_2_x_16():
+    """'2 x 16GB DDR5-6000' should parse total capacity as 32GB."""
+    from scrapers.newegg import _parse_ram_specs
+    specs = _parse_ram_specs("Corsair Vengeance 2 x 16GB DDR5-6400")
+    assert specs.get("capacity_gb") == 32
+
+
+def test_parse_ram_specs_total_already_stated():
+    """'32GB (2x16GB) DDR5-6000' should still get 32GB (use first match)."""
+    from scrapers.newegg import _parse_ram_specs
+    specs = _parse_ram_specs("G.SKILL 32GB (2x16GB) DDR5-6000")
+    assert specs.get("capacity_gb") == 32
+
+
+# --- Bug #2: DDR5 should be inferred from search context ---
+def test_parse_ram_specs_no_ddr_in_name():
+    """Abbreviated RAM names like 'V-Color 32GB Memory' lack DDR version.
+    When search context is DDR5, the scraper should still mark it as DDR5."""
+    from scrapers.newegg import _parse_ram_specs
+    # This tests the raw parser — it returns empty ddr when not in name
+    specs = _parse_ram_specs("V-Color 32GB Memory")
+    # The raw parser cannot infer DDR from context, but capacity should work
+    assert specs.get("capacity_gb") == 32
+
+
+def test_parse_combo_item_infers_ddr5_when_missing():
+    """If RAM component lacks DDR version but search is DDR5, infer DDR5."""
+    raw = {
+        "title": "CPU Motherboard Memory Combo - AMD Ryzen 7 9850X3D CPU + ASUS X870E-Plus MB + V-Color DDR5 32GB Memory",
+        "price": "$900",
+        "url": "/Product/ComboDealDetails?ItemList=Combo.4853134",
+        "components": [
+            {"name": "AMD Ryzen 7 9850X3D CPU", "category": "cpu"},
+            {"name": "ASUS X870E-Plus MB", "category": "motherboard"},
+            {"name": "V-Color 32GB Memory", "category": "ram"},
+        ],
+    }
+    deal = parse_combo_item(raw)
+    ram = deal.get_component("ram")
+    assert ram.specs.get("ddr") == 5
