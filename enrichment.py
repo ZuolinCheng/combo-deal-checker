@@ -1,10 +1,9 @@
-"""Deal enrichment with CPU benchmarks and RAM/motherboard specs."""
+"""Enrich combo deals with benchmark scores and parsed specs."""
 from models import ComboDeal
 from benchmarks import BenchmarkLookup
 
 
 def enrich_deals(deals: list[ComboDeal], benchmark: BenchmarkLookup) -> list[ComboDeal]:
-    """Enrich deals with benchmark scores and component specifications."""
     for deal in deals:
         _enrich_cpu(deal, benchmark)
         _enrich_ram(deal)
@@ -13,7 +12,6 @@ def enrich_deals(deals: list[ComboDeal], benchmark: BenchmarkLookup) -> list[Com
 
 
 def _enrich_cpu(deal: ComboDeal, benchmark: BenchmarkLookup):
-    """Populate CPU benchmark fields on the deal."""
     cpu = deal.get_component("cpu")
     if not cpu:
         return
@@ -26,7 +24,6 @@ def _enrich_cpu(deal: ComboDeal, benchmark: BenchmarkLookup):
 
 
 def _enrich_ram(deal: ComboDeal):
-    """Populate RAM spec fields on the deal."""
     ram = deal.get_component("ram")
     if not ram:
         return
@@ -36,7 +33,6 @@ def _enrich_ram(deal: ComboDeal):
 
 
 def _enrich_motherboard(deal: ComboDeal):
-    """Populate motherboard name on the deal."""
     mb = deal.get_component("motherboard")
     if not mb:
         return
