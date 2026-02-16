@@ -8,7 +8,7 @@ from models import ComboDeal, Component
 
 logger = logging.getLogger(__name__)
 
-NEWEGG_COMBO_URL = "https://www.newegg.com/combo-deals/category/id-1"
+NEWEGG_SEARCH_URL = "https://www.newegg.com/p/pl?d=cpu+motherboard+ram+combo+ddr5"
 
 
 def _parse_price(text: str) -> float:
@@ -140,15 +140,14 @@ class NeweggScraper(BaseScraper):
         super().__init__(config)
 
     async def scrape(self) -> list[ComboDeal]:
-        """Navigate to Newegg combo deals page, scroll and parse items."""
-        logger.info(f"[{self.retailer_name}] Navigating to {NEWEGG_COMBO_URL}")
-        await self._page.goto(NEWEGG_COMBO_URL, wait_until="networkidle")
+        """Search Newegg for CPU+MB+RAM combo deals."""
+        logger.info(f"[{self.retailer_name}] Navigating to {NEWEGG_SEARCH_URL}")
+        await self._page.goto(NEWEGG_SEARCH_URL, wait_until="domcontentloaded")
         await self._delay()
         await self._scroll_to_bottom()
 
         deals = []
-        # Extract combo deal items from the page
-        items = await self._page.query_selector_all(".combo-item, .item-cell")
+        items = await self._page.query_selector_all(".item-cell")
         logger.info(f"[{self.retailer_name}] Found {len(items)} raw items on page")
 
         for item in items:
@@ -156,7 +155,8 @@ class NeweggScraper(BaseScraper):
                 raw = await self._extract_combo_item(item)
                 if raw:
                     deal = parse_combo_item(raw)
-                    deals.append(deal)
+                    if deal.combo_type != "OTHER":
+                        deals.append(deal)
             except Exception as e:
                 logger.warning(f"[{self.retailer_name}] Failed to parse item: {e}")
                 continue
@@ -165,29 +165,34 @@ class NeweggScraper(BaseScraper):
 
     async def _extract_combo_item(self, element) -> dict | None:
         """Extract raw combo deal data from a page element."""
-        title_el = await element.query_selector(".combo-title, .item-title a")
-        price_el = await element.query_selector(".price-current, .price")
-        link_el = await element.query_selector("a.combo-title, .item-title a")
+        title_el = await element.query_selector(".item-title")
+        price_el = await element.query_selector(".price-current")
 
         if not title_el or not price_el:
             return None
 
         title = (await title_el.inner_text()).strip()
         price_text = (await price_el.inner_text()).strip()
-        url = await link_el.get_attribute("href") if link_el else ""
+        url = await title_el.get_attribute("href") or ""
 
-        # Parse components from the title (split by + or ,)
-        comp_names = re.split(r"\s*[+,]\s*", title)
+        # Strip common prefix like "CPU Motherboard Memory Combo - "
+        clean_title = re.sub(r"^CPU Motherboard Memory Combo\s*-\s*", "", title)
+
+        # Split components by " + ", " and ", " with ", or ","
+        comp_names = re.split(r"\s+(?:\+|and|with)\s+|,\s*", clean_title)
         components = []
         for name in comp_names:
             name = name.strip()
-            if name:
+            if name and len(name) > 3:
                 category = _detect_category(name)
                 components.append({"name": name, "category": category})
+
+        if not components:
+            return None
 
         return {
             "title": title,
             "price": price_text,
-            "url": url or "",
+            "url": url,
             "components": components,
         }

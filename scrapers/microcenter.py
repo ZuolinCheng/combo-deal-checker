@@ -1,4 +1,5 @@
 """Micro Center bundle deal scraper."""
+import asyncio
 import re
 import logging
 
@@ -8,7 +9,10 @@ from models import ComboDeal, Component
 
 logger = logging.getLogger(__name__)
 
-MICROCENTER_BUNDLE_URL = "https://www.microcenter.com/search/search_results.aspx?Ntk=all&sortby=match&N=4294966998&myStore=true"
+MICROCENTER_BUNDLE_URLS = [
+    "https://www.microcenter.com/site/content/bundle-and-save.aspx",
+    "https://www.microcenter.com/site/content/intel-bundle-and-save.aspx",
+]
 
 
 def _parse_price(text: str) -> float:
@@ -127,118 +131,123 @@ def parse_bundle_item(raw: dict) -> ComboDeal:
 
 
 class MicroCenterScraper(BaseScraper):
-    """Scraper for Micro Center bundle deals.
-
-    Sets store location via zip code from config before scraping.
-    """
+    """Scraper for Micro Center 3-in-1 bundle deals."""
 
     def __init__(self, config: Config):
         super().__init__(config)
 
     async def scrape(self) -> list[ComboDeal]:
-        """Set location and scrape Micro Center bundle pages."""
-        await self._set_store_location()
-        await self._delay()
+        """Scrape Micro Center AMD and Intel bundle pages."""
+        all_deals = []
+        for url in MICROCENTER_BUNDLE_URLS:
+            logger.info(f"[{self.retailer_name}] Navigating to {url}")
+            await self._page.goto(url, wait_until="domcontentloaded")
+            await asyncio.sleep(5)
+            await self._scroll_to_bottom()
 
-        logger.info(
-            f"[{self.retailer_name}] Navigating to {MICROCENTER_BUNDLE_URL}"
-        )
-        await self._page.goto(MICROCENTER_BUNDLE_URL, wait_until="networkidle")
-        await self._delay()
-        await self._scroll_to_bottom()
+            deals = await self._extract_bundle_deals()
+            logger.info(f"[{self.retailer_name}] Found {len(deals)} deals from {url}")
+            all_deals.extend(deals)
+            await self._delay()
 
+        return all_deals
+
+    async def _extract_bundle_deals(self) -> list[ComboDeal]:
+        """Extract bundle deals from the current page by parsing product links."""
         deals = []
-        items = await self._page.query_selector_all(
-            ".product_wrapper, .bundle-item"
-        )
-        logger.info(
-            f"[{self.retailer_name}] Found {len(items)} raw items on page"
-        )
 
-        for item in items:
+        # Extract bundle product links with prices from the page
+        bundles = await self._page.evaluate("""
+            () => {
+                const links = document.querySelectorAll('a[href*="/product/"]');
+                const results = [];
+                const seen = new Set();
+                for (const a of links) {
+                    const href = a.href || '';
+                    if (!href.includes('bundle') && !href.includes('build-bundle')) continue;
+                    if (seen.has(href)) continue;
+                    seen.add(href);
+
+                    // Walk up to find the price container
+                    let container = a.closest('[id="Base"], [id="Upgrade"], .specs') || a.parentElement;
+                    let priceEl = container ? container.querySelector('.price') : null;
+                    let priceText = priceEl ? priceEl.textContent.trim() : '';
+
+                    // Get the product name from the URL path
+                    const pathMatch = href.match(/\\/product\\/\\d+\\/(.+)/);
+                    let productPath = pathMatch ? pathMatch[1] : '';
+
+                    // Also grab visible text for component names
+                    let text = container ? container.textContent.replace(/\\s+/g, ' ').trim() : '';
+
+                    results.push({
+                        url: href,
+                        productPath: productPath,
+                        price: priceText,
+                        text: text.substring(0, 500),
+                    });
+                }
+                return results;
+            }
+        """)
+
+        logger.info(f"[{self.retailer_name}] Found {len(bundles)} bundle links")
+
+        for bundle in bundles:
             try:
-                raw = await self._extract_bundle_item(item)
-                if raw:
-                    deal = parse_bundle_item(raw)
+                deal = self._parse_bundle_from_link(bundle)
+                if deal and deal.combo_type != "OTHER":
                     deals.append(deal)
             except Exception as e:
-                logger.warning(
-                    f"[{self.retailer_name}] Failed to parse item: {e}"
-                )
-                continue
+                logger.warning(f"[{self.retailer_name}] Failed to parse bundle: {e}")
 
         return deals
 
-    async def _set_store_location(self):
-        """Set the Micro Center store location using the configured zip code."""
-        zip_code = self.config.microcenter_zip
-        logger.info(
-            f"[{self.retailer_name}] Setting store location to zip: {zip_code}"
-        )
-        await self._page.goto(
-            "https://www.microcenter.com", wait_until="networkidle"
-        )
-        try:
-            store_btn = await self._page.query_selector(
-                "#Change-Store, .store-select"
-            )
-            if store_btn:
-                await store_btn.click()
-                await self._delay()
-                zip_input = await self._page.query_selector(
-                    "#zip-code, input[name='zipCode']"
-                )
-                if zip_input:
-                    await zip_input.fill(zip_code)
-                    submit_btn = await self._page.query_selector(
-                        "#find-stores, button[type='submit']"
-                    )
-                    if submit_btn:
-                        await submit_btn.click()
-                        await self._delay()
-        except Exception as e:
-            logger.warning(
-                f"[{self.retailer_name}] Could not set store location: {e}"
-            )
+    def _parse_bundle_from_link(self, bundle: dict) -> ComboDeal | None:
+        """Parse a bundle deal from extracted link data."""
+        url = bundle.get("url", "")
+        price_text = bundle.get("price", "")
+        product_path = bundle.get("productPath", "")
+        page_text = bundle.get("text", "")
 
-    async def _extract_bundle_item(self, element) -> dict | None:
-        """Extract raw bundle data from a page element."""
-        title_el = await element.query_selector(
-            ".product-title a, .bundle-title"
-        )
-        price_el = await element.query_selector(
-            ".price span, .bundle-price"
-        )
-        link_el = await element.query_selector(
-            ".product-title a, a.bundle-link"
-        )
-
-        if not title_el or not price_el:
+        combo_price = _parse_price(price_text)
+        if combo_price <= 0:
             return None
 
-        title = (await title_el.inner_text()).strip()
-        price_text = (await price_el.inner_text()).strip()
-        url = ""
-        if link_el:
-            href = await link_el.get_attribute("href")
-            if href:
-                url = (
-                    f"https://www.microcenter.com{href}"
-                    if href.startswith("/")
-                    else href
-                )
-
-        comp_names = re.split(r"\s*[+,]\s*", title)
+        # Parse component names from URL path (comma-separated, hyphenated)
+        # e.g. "amd-ryzen-7-9850x3d,-asus-x870-p-prime-wifi-am5,-gskill-flare-x5-series-32gb-ddr5-6000-kit,-computer-build-bundle"
+        parts = product_path.replace("-computer-build-bundle", "").split(",-")
         components = []
-        for name in comp_names:
-            name = name.strip()
-            if name:
-                category = _detect_category(name)
-                components.append({"name": name, "category": category})
+        for part in parts:
+            name = part.replace("-", " ").strip()
+            if not name or len(name) < 3:
+                continue
+            category = _detect_category(name)
+            specs = _parse_ram_specs(name) if category == "ram" else {}
+            components.append(Component(name=name, category=category, specs=specs))
 
-        return {
-            "title": title,
-            "price": price_text,
-            "url": url,
-            "components": components,
-        }
+        if not components:
+            return None
+
+        combo_type = _detect_combo_type(components)
+        deal = ComboDeal(
+            retailer="MicroCenter",
+            combo_type=combo_type,
+            components=components,
+            combo_price=combo_price,
+            url=url,
+        )
+
+        cpu = deal.get_component("cpu")
+        if cpu:
+            deal.cpu_name = cpu.name
+        mb = deal.get_component("motherboard")
+        if mb:
+            deal.motherboard_name = mb.name
+        ram = deal.get_component("ram")
+        if ram:
+            deal.ram_name = ram.name
+            deal.ram_speed_mhz = ram.specs.get("speed_mhz", 0)
+            deal.ram_capacity_gb = ram.specs.get("capacity_gb", 0)
+
+        return deal

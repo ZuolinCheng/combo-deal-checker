@@ -181,7 +181,7 @@ class AmazonScraper(BaseScraper):
         """Execute a single search query on Amazon."""
         search_url = f"https://www.amazon.com/s?k={query.replace(' ', '+')}"
         logger.info(f"[{self.retailer_name}] Searching: {search_url}")
-        await self._page.goto(search_url, wait_until="networkidle")
+        await self._page.goto(search_url, wait_until="domcontentloaded")
         await self._delay()
         await self._scroll_to_bottom()
 
