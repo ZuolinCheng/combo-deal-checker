@@ -6,6 +6,7 @@ from datetime import datetime
 
 from jinja2 import Template
 
+from display_names import shorten_cpu, shorten_ram, shorten_motherboard
 from models import ComboDeal
 
 
@@ -123,11 +124,14 @@ HTML_TEMPLATE = Template("""\
   <th class="sortable" onclick="sortTable(5)">SC</th>
   <th class="sortable" onclick="sortTable(6)">MC</th>
   <th class="sortable" onclick="sortTable(7)">Motherboard</th>
-  <th class="sortable" onclick="sortTable(8)">RAM</th>
-  <th class="sortable" onclick="sortTable(9)">Speed</th>
-  <th class="sortable" onclick="sortTable(10)">Combo$</th>
-  <th class="sortable" onclick="sortTable(11)">Indiv$</th>
-  <th class="sortable" onclick="sortTable(12)">Save$</th>
+  <th class="sortable" onclick="sortTable(8)">MB$</th>
+  <th class="sortable" onclick="sortTable(9)">PCIe5 x16</th>
+  <th class="sortable" onclick="sortTable(10)">PCIe5 M.2</th>
+  <th class="sortable" onclick="sortTable(11)">RAM</th>
+  <th class="sortable" onclick="sortTable(12)">Speed</th>
+  <th class="sortable" onclick="sortTable(13)">Combo$</th>
+  <th class="sortable" onclick="sortTable(14)">Indiv$</th>
+  <th class="sortable" onclick="sortTable(15)">Save$</th>
   <th>URL</th>
 </tr>
 </thead>
@@ -137,12 +141,15 @@ HTML_TEMPLATE = Template("""\
   <td>{{ loop.index }}</td>
   <td>{{ deal.retailer }}</td>
   <td>{{ deal.combo_type }}</td>
-  <td>{{ deal.cpu_name }}</td>
+  <td>{{ deal.display_cpu }}</td>
   <td>{{ deal.cpu_cores }}</td>
   <td>{{ deal.cpu_sc_score }}</td>
   <td>{{ deal.cpu_mc_score }}</td>
-  <td>{{ deal.motherboard_name }}</td>
-  <td>{{ deal.ram_name }}</td>
+  <td>{{ deal.display_mb }}</td>
+  <td>{{ "$%.2f"|format(deal.mb_amazon_price) if deal.mb_amazon_price else "—" }}</td>
+  <td>{{ deal.mb_pcie5_x16 or "—" }}</td>
+  <td>{{ deal.mb_pcie5_m2 or "—" }}</td>
+  <td>{{ deal.display_ram }}</td>
   <td>{{ deal.ram_speed_mhz }}</td>
   <td>${{ "%.2f"|format(deal.combo_price) }}</td>
   <td>${{ "%.2f"|format(deal.individual_total) }}</td>
@@ -227,6 +234,14 @@ INDEX_TEMPLATE = Template("""\
 """)
 
 
+def _assign_display_names(deals: list[ComboDeal]) -> None:
+    """Assign shortened display names to each deal for HTML output."""
+    for deal in deals:
+        deal.display_cpu = shorten_cpu(deal.cpu_name)  # type: ignore[attr-defined]
+        deal.display_mb = shorten_motherboard(deal.motherboard_name)  # type: ignore[attr-defined]
+        deal.display_ram = shorten_ram(deal.ram_name)  # type: ignore[attr-defined]
+
+
 def _assign_row_classes(deals: list[ComboDeal]) -> None:
     """Assign row_class attribute to each deal based on savings percentage."""
     for deal in deals:
@@ -255,6 +270,7 @@ def render_html_report(
     os.makedirs(output_dir, exist_ok=True)
 
     _assign_row_classes(deals)
+    _assign_display_names(deals)
 
     # Compute summary stats
     best_savings = 0.0
@@ -265,7 +281,7 @@ def render_html_report(
         best_deal = max(deals, key=lambda d: d.savings)
         best_savings = best_deal.savings
         avg_savings = sum(d.savings for d in deals) / len(deals)
-        best_deal_name = best_deal.cpu_name or best_deal.combo_type
+        best_deal_name = shorten_cpu(best_deal.cpu_name) or best_deal.combo_type
 
     now = datetime.now()
     generated_at = now.strftime("%Y-%m-%d %H:%M:%S")

@@ -9,10 +9,14 @@ from models import ComboDeal, Component
 logger = logging.getLogger(__name__)
 
 BHPHOTO_SEARCH_QUERIES = [
-    "CPU motherboard RAM bundle DDR5",
-    "processor motherboard memory kit DDR5",
+    "CPU motherboard RAM bundle",
+    "processor motherboard memory kit",
     "AMD Ryzen motherboard RAM kit",
     "Intel Core motherboard RAM kit",
+    "motherboard RAM bundle",
+    "motherboard memory kit",
+    "CPU RAM kit",
+    "processor memory bundle",
 ]
 
 

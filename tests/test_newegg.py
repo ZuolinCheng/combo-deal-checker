@@ -1,6 +1,6 @@
 # tests/test_newegg.py
 import pytest
-from scrapers.newegg import parse_combo_item, NeweggScraper
+from scrapers.newegg import NEWEGG_SEARCH_URLS, parse_combo_item, NeweggScraper
 from config import Config
 
 
@@ -40,6 +40,28 @@ def test_parse_combo_item_cpu_ram_only():
 def test_newegg_scraper_init():
     scraper = NeweggScraper(Config())
     assert scraper.retailer_name == "NeweggScraper"
+
+
+def test_newegg_search_urls_include_mb_ram():
+    lowered = [url.lower() for url in NEWEGG_SEARCH_URLS]
+    assert any(
+        ("motherboard+ram" in url or "motherboard+memory" in url)
+        and all(token not in url for token in ("cpu+", "+cpu", "processor", "ryzen", "intel", "core+"))
+        for url in lowered
+    )
+
+
+def test_newegg_search_urls_exclude_ddr5_keyword():
+    assert all("ddr5" not in url.lower() for url in NEWEGG_SEARCH_URLS)
+
+
+def test_newegg_search_urls_include_cpu_ram():
+    lowered = [url.lower() for url in NEWEGG_SEARCH_URLS]
+    assert any(
+        ("cpu+ram" in url or "cpu+memory" in url)
+        and "motherboard" not in url
+        for url in lowered
+    )
 
 
 # --- Bug #11: Relative URLs should be made absolute ---
@@ -152,3 +174,52 @@ def test_parse_combo_item_infers_ddr5_when_missing():
     deal = parse_combo_item(raw)
     ram = deal.get_component("ram")
     assert ram.specs.get("ddr") == 5
+
+
+def test_detect_category_motherboard_with_ryzen_support_text():
+    """Motherboard titles often mention Ryzen support and must not be marked CPU."""
+    from scrapers.newegg import _detect_category
+    name = (
+        "GIGABYTE X870E AERO X3D WOOD AMD AM5 LGA 1718 Motherboard, ATX, "
+        "Supports AMD Ryzen 9000/8000/7000 Series Processors"
+    )
+    assert _detect_category(name) == "motherboard"
+
+
+def test_needs_detail_enrichment_for_cpu_sku_combo():
+    """CPU SKU-only combos should trigger detail enrichment to recover CPU model text."""
+    from scrapers.newegg import _needs_detail_enrichment
+
+    raw = {
+        "title": "CPU Motherboard Memory Combo - AMD 100-100001973WOF Bundle with MSI MAG X870 TOMAHAWK WIFI and V-color TMXSAL1664832KWK",
+        "price": "$849.99",
+        "url": "https://www.newegg.com/Product/ComboDealDetails?ItemList=Combo.4853708",
+        "components": [
+            {"name": "AMD 100-100001973WOF", "category": "cpu"},
+            {"name": "MSI MAG X870 TOMAHAWK WIFI", "category": "motherboard"},
+            {"name": "V-color TMXSAL1664832KWK", "category": "ram"},
+        ],
+    }
+
+    deal = parse_combo_item(raw)
+    assert _needs_detail_enrichment(deal) is True
+
+
+def test_parse_ram_specs_vendor_sku_patterns():
+    """Vendor SKU-only RAM names should still yield capacity/speed.
+
+    Regression: combos like 4853094/4853708/4852644 were filtered as RAM 0GB.
+    """
+    from scrapers.newegg import _parse_ram_specs
+
+    corsair = _parse_ram_specs("Corsair CMH32GX5M2N6400C36W")
+    assert corsair.get("capacity_gb") == 32
+    assert corsair.get("speed_mhz") == 6400
+
+    vcolor = _parse_ram_specs("V-color TMXSAL1664832KWK")
+    assert vcolor.get("capacity_gb") == 32
+    assert vcolor.get("speed_mhz") == 6400
+
+    patriot = _parse_ram_specs("Patriot Memory VEB516G6030W")
+    assert patriot.get("capacity_gb") == 16
+    assert patriot.get("speed_mhz") == 6000

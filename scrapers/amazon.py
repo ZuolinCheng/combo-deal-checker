@@ -9,10 +9,14 @@ from models import ComboDeal, Component
 logger = logging.getLogger(__name__)
 
 AMAZON_SEARCH_QUERIES = [
-    "CPU motherboard RAM combo DDR5",
-    "processor motherboard memory bundle DDR5",
-    "AMD Ryzen motherboard RAM combo DDR5",
-    "Intel Core motherboard RAM combo DDR5",
+    "CPU motherboard RAM combo",
+    "processor motherboard memory bundle",
+    "AMD Ryzen motherboard RAM combo",
+    "Intel Core motherboard RAM combo",
+    "motherboard RAM combo",
+    "motherboard memory bundle",
+    "CPU RAM combo",
+    "processor memory bundle",
 ]
 
 

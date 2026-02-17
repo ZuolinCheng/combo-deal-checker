@@ -1,6 +1,11 @@
 # tests/test_amazon.py
 import pytest
-from scrapers.amazon import parse_amazon_result, lookup_individual_price_from_text, AmazonScraper
+from scrapers.amazon import (
+    AMAZON_SEARCH_QUERIES,
+    parse_amazon_result,
+    lookup_individual_price_from_text,
+    AmazonScraper,
+)
 from config import Config
 
 
@@ -44,3 +49,27 @@ def test_lookup_individual_price_invalid():
 def test_amazon_scraper_init():
     scraper = AmazonScraper(Config())
     assert scraper.retailer_name == "AmazonScraper"
+
+
+def test_amazon_search_queries_include_mb_ram():
+    lowered = [q.lower() for q in AMAZON_SEARCH_QUERIES]
+    assert any(
+        "motherboard" in q
+        and ("ram" in q or "memory" in q)
+        and all(token not in q for token in ("cpu", "processor", "ryzen", "intel", "core"))
+        for q in lowered
+    )
+
+
+def test_amazon_search_queries_exclude_ddr5_keyword():
+    assert all("ddr5" not in q.lower() for q in AMAZON_SEARCH_QUERIES)
+
+
+def test_amazon_search_queries_include_cpu_ram():
+    lowered = [q.lower() for q in AMAZON_SEARCH_QUERIES]
+    assert any(
+        ("cpu" in q or "processor" in q)
+        and ("ram" in q or "memory" in q)
+        and "motherboard" not in q
+        for q in lowered
+    )

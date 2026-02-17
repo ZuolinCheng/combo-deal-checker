@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 
 from config import Config
+from cache import DealCache
 from models import ComboDeal
 from scrapers.newegg import NeweggScraper
 from scrapers.amazon import AmazonScraper
@@ -41,6 +42,13 @@ async def main():
         config.headless = False
     if "--debug" in sys.argv:
         logging.getLogger().setLevel(logging.DEBUG)
+    fresh = "--fresh" in sys.argv
+
+    # Initialize cache
+    cache = DealCache(cache_dir=config.cache_dir, price_ttl=config.price_cache_ttl)
+    if fresh:
+        cache.clear()
+        logger.info("Running with --fresh: all caches cleared")
 
     # Ensure output dirs exist
     os.makedirs(config.results_dir, exist_ok=True)
@@ -54,7 +62,7 @@ async def main():
 
     # Initialize scrapers
     scrapers = [
-        NeweggScraper(config),
+        NeweggScraper(config, cache=cache),
         MicroCenterScraper(config),
         AmazonScraper(config),
         BHPhotoScraper(config),
@@ -83,7 +91,7 @@ async def main():
     all_deals = enrich_deals(all_deals, benchmark)
 
     # Look up Amazon reference prices for savings calculation
-    price_lookup = AmazonPriceLookup(config)
+    price_lookup = AmazonPriceLookup(config, cache=cache)
     all_deals = await price_lookup.lookup_prices(all_deals)
 
     # Filter deals
@@ -96,6 +104,10 @@ async def main():
 
     html_path = render_html_report(filtered, output_dir=config.results_dir)
     logger.info(f"HTML report saved to: {html_path}")
+
+    # Persist cache for next run
+    cache.save()
+    logger.info("Cache saved")
 
     # Print scraper status summary
     print("\n--- Scraper Status ---")

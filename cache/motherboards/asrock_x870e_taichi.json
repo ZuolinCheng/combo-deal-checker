@@ -1,0 +1,9 @@
+{
+  "name": "ASRock X870E Taichi",
+  "amazon_price": 330.00,
+  "amazon_url": "https://www.amazon.com/ASRock-X870E-Taichi-Channel-Motherboard/dp/B0DFP2Q3TM",
+  "pcie5_x16_slots": 2,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 1,
+  "retrieved_at": "2026-02-17"
+}

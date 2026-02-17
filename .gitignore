@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Cache (runtime price cache, but track motherboard specs)
+cache/*
+!cache/motherboards/
+
+# Runtime output
+logs/
+results/
+
+# IDE
+.vscode/
+.idea/

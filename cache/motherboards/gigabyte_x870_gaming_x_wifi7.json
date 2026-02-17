@@ -1,0 +1,9 @@
+{
+  "name": "GIGABYTE X870 GAMING X WIFI7",
+  "amazon_price": 219.99,
+  "amazon_url": "https://www.amazon.com/GIGABYTE-X870-WIFI7-Motherboard-EZ-Latch/dp/B0DGVGT3PJ",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 1,
+  "retrieved_at": "2026-02-17"
+}

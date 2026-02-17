@@ -1,0 +1,9 @@
+{
+  "name": "ASUS Z790 MAX GAMING WIFI7",
+  "amazon_price": 199.99,
+  "amazon_url": "https://www.amazon.com/ASUS-Z790-MAX-WIFI7-ThunderboltTM/dp/B0F8PR49WV",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 0,
+  "retrieved_at": "2026-02-17"
+}

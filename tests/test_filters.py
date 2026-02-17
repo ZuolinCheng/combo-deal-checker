@@ -61,7 +61,7 @@ def test_filter_deals_integration():
         _make_deal(ram_specs={"ddr": 5, "capacity_gb": 32}, combo_price=800),
         _make_deal(ram_specs={"ddr": 4, "capacity_gb": 32}, combo_price=600),  # DDR4
         _make_deal(ram_specs={"ddr": 5, "capacity_gb": 16}, combo_price=700),  # <32GB
-        _make_deal(ram_specs={"ddr": 5, "capacity_gb": 64}, combo_price=2000), # over budget
+        _make_deal(ram_specs={"ddr": 5, "capacity_gb": 64}, combo_price=2200), # over budget
     ]
     filtered = filter_deals(deals, config)
     assert len(filtered) == 1

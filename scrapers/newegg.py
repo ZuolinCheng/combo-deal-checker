@@ -3,6 +3,7 @@ import re
 import logging
 
 from scrapers.base import BaseScraper
+from cache import DealCache
 from config import Config
 from models import ComboDeal, Component
 
@@ -10,8 +11,12 @@ logger = logging.getLogger(__name__)
 
 NEWEGG_BASE_URL = "https://www.newegg.com"
 NEWEGG_SEARCH_URLS = [
-    "https://www.newegg.com/p/pl?d=cpu+motherboard+ram+combo+ddr5",
+    "https://www.newegg.com/p/pl?d=cpu+motherboard+ram+combo",
     "https://www.newegg.com/p/pl?d=cpu+motherboard+ram+bundle",
+    "https://www.newegg.com/p/pl?d=motherboard+ram+combo",
+    "https://www.newegg.com/p/pl?d=motherboard+memory+bundle",
+    "https://www.newegg.com/p/pl?d=cpu+ram+combo",
+    "https://www.newegg.com/p/pl?d=cpu+memory+bundle",
 ]
 MAX_PAGES = 10  # safety limit
 
@@ -30,6 +35,17 @@ def _parse_price(text: str) -> float:
 def _detect_category(name: str) -> str:
     """Detect component category (cpu/motherboard/ram) from product name."""
     name_lower = name.lower()
+    compact = re.sub(r"[^a-z0-9-]", "", name_lower)
+    # Motherboard patterns (checked first because many board titles mention CPU support)
+    mb_keywords = [
+        "x870", "x670", "b850", "b650", "b550", "x570",
+        "z790", "z690", "b760", "b660", "z890",
+        "motherboard", "mainboard",
+        "rog strix", "tuf gaming", "mag ", "aorus", "prime",
+    ]
+    if any(kw in name_lower for kw in mb_keywords):
+        return "motherboard"
+
     # CPU patterns
     cpu_keywords = [
         "ryzen", "core i", "core ultra", "threadripper",
@@ -40,15 +56,9 @@ def _detect_category(name: str) -> str:
     ]
     if any(kw in name_lower for kw in cpu_keywords):
         return "cpu"
-    # Motherboard patterns
-    mb_keywords = [
-        "x870", "x670", "b850", "b650", "b550", "x570",
-        "z790", "z690", "b760", "b660", "z890",
-        "motherboard", "mainboard",
-        "rog strix", "tuf gaming", "mag ", "aorus", "prime",
-    ]
-    if any(kw in name_lower for kw in mb_keywords):
-        return "motherboard"
+    # CPU SKU patterns (e.g. AMD 100-100001973WOF)
+    if re.search(r"\d{3}-\d{9,}[a-z]{0,4}", compact):
+        return "cpu"
     # RAM patterns — include brand SKU prefixes for truncated titles
     ram_keywords = [
         "ddr5", "ddr4", "ram", "memory", "trident", "vengeance", "fury",
@@ -64,10 +74,15 @@ def _parse_ram_specs(name: str) -> dict:
     """Extract DDR version, capacity (GB), and speed (MHz) from RAM name."""
     specs = {}
     name_lower = name.lower()
+    compact = re.sub(r"[^a-z0-9]", "", name_lower)
     # DDR version
     ddr_match = re.search(r"ddr(\d)", name_lower)
     if ddr_match:
         specs["ddr"] = int(ddr_match.group(1))
+    else:
+        # SKU-only names often imply DDR generation in the model code.
+        if "gx5" in compact or "ddr5" in compact or "tmxs" in compact or "veb5" in compact:
+            specs["ddr"] = 5
     # Capacity in GB — handle kit formats like "2x16GB" or "2 x 16GB"
     kit_match = re.search(r"(\d+)\s*x\s*(\d+)\s*gb", name_lower)
     if kit_match:
@@ -78,11 +93,87 @@ def _parse_ram_specs(name: str) -> dict:
         cap_match = re.search(r"(\d+)\s*gb", name_lower)
         if cap_match:
             specs["capacity_gb"] = int(cap_match.group(1))
+
+    # SKU fallback: Corsair CMH/CMK codes encode total capacity and speed.
+    # Example: CMH32GX5M2N6400C36W -> 32GB, DDR5, 6400.
+    corsair_match = re.search(r"(?:cmh|cmk)(\d+)gx(\d)m\d+n?(\d{4,5})", compact)
+    if corsair_match:
+        specs.setdefault("capacity_gb", int(corsair_match.group(1)))
+        specs.setdefault("ddr", int(corsair_match.group(2)))
+        specs.setdefault("speed_mhz", int(corsair_match.group(3)))
+
+    # SKU fallback: V-Color TMXS* codes often embed {per-stick}{speed/10}{cl}.
+    # Example: TMXSAL1664832KWK -> 2x16GB, DDR5-6400 CL32.
+    vcolor_match = re.search(r"tmxs[a-z0-9]*?(\d{2})(\d{3})(\d{2})", compact)
+    if vcolor_match:
+        per_stick = int(vcolor_match.group(1))
+        speed_digits = vcolor_match.group(2)
+        # TMXS* speed segment appears like 648/603 etc; first two digits map to MT/s.
+        speed_guess = int(speed_digits[:2]) * 100
+        if per_stick in {8, 16, 24, 32, 48, 64}:
+            specs.setdefault("capacity_gb", per_stick * 2)
+        if 4800 <= speed_guess <= 9000:
+            specs.setdefault("speed_mhz", speed_guess)
+        specs.setdefault("ddr", 5)
+
+    # SKU fallback: Patriot VEB5* models encode capacity and speed class.
+    # Example: VEB516G6030W -> 16GB, DDR5, 6000.
+    patriot_match = re.search(r"veb5(\d{2})g(\d{2})(\d{2})", compact)
+    if patriot_match:
+        specs.setdefault("capacity_gb", int(patriot_match.group(1)))
+        specs.setdefault("speed_mhz", int(patriot_match.group(2)) * 100)
+        specs.setdefault("ddr", 5)
+
     # Speed in MHz
     speed_match = re.search(r"ddr\d[- ]?(\d{4,5})", name_lower)
     if speed_match:
         specs["speed_mhz"] = int(speed_match.group(1))
     return specs
+
+
+def _clean_combo_item_text(text: str) -> str:
+    """Normalize combo component text extracted from detail swiper cards."""
+    cleaned = " ".join((text or "").split())
+    cleaned = re.sub(r"^\(\d+\)\s*", "", cleaned)
+    cleaned = re.sub(r"\s+\$[\d,]+(?:\.\d+)?\s*[–-]?\s*$", "", cleaned)
+    return cleaned.strip(" -–")
+
+
+def _looks_like_cpu_sku(name: str) -> bool:
+    """Detect CPU model-code style names (e.g. AMD 100-100001973WOF)."""
+    lower = (name or "").lower()
+    compact = re.sub(r"[^a-z0-9-]", "", lower)
+    return bool(re.search(r"\d{3}-\d{9,}[a-z]{0,4}", compact))
+
+
+def _needs_detail_enrichment(deal: ComboDeal) -> bool:
+    """Return True when combo detail page should be used to enrich components/specs."""
+    if "ComboDealDetails" not in deal.url:
+        return False
+
+    categories = {c.category for c in deal.components}
+    if len(categories - {"unknown"}) < 3:
+        return True
+
+    ram = deal.get_component("ram")
+    if not ram:
+        return True
+
+    cpu = deal.get_component("cpu")
+    if cpu:
+        # SKU-only CPU names won't map to benchmark DB without detail enrichment.
+        if _looks_like_cpu_sku(cpu.name):
+            return True
+        # Guard against category drift where motherboard text became CPU.
+        if _detect_category(cpu.name) == "motherboard":
+            return True
+
+    # Main regression case: RAM SKU detected, but specs missing (0GB/0MHz).
+    if ram.specs.get("capacity_gb", 0) <= 0:
+        return True
+    if ram.specs.get("speed_mhz", 0) <= 0:
+        return True
+    return False
 
 
 def _extract_prefix_categories(title: str) -> list[str]:
@@ -175,8 +266,9 @@ def parse_combo_item(raw: dict) -> ComboDeal:
 class NeweggScraper(BaseScraper):
     """Scraper for Newegg combo deals."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, cache: DealCache | None = None):
         super().__init__(config)
+        self._cache = cache
 
     async def scrape(self) -> list[ComboDeal]:
         """Search Newegg for CPU+MB+RAM combo deals across multiple queries and pages."""
@@ -219,25 +311,38 @@ class NeweggScraper(BaseScraper):
         # Phase 2: Parse items and visit detail pages for incomplete combos.
         # Now it's safe to navigate because we no longer hold element handles.
         deals = []
+        cache_hits = 0
         for raw in all_raw_items:
             deal = parse_combo_item(raw)
             if deal.combo_type == "OTHER":
                 logger.debug(f"[{self.retailer_name}] Skipped OTHER: {raw.get('title', '')[:80]}")
                 continue
 
-            # Fallback: if combo URL detected but components are incomplete,
-            # visit the detail page to get full component info
-            categories = {c.category for c in deal.components}
-            is_combo_url = "ComboDealDetails" in deal.url
-            if is_combo_url and len(categories - {"unknown"}) < 3:
-                logger.info(f"[{self.retailer_name}] Incomplete components ({categories}), "
-                            f"fetching detail page: {deal.url}")
-                detail_deal = await self._scrape_combo_detail(deal.url)
-                if detail_deal and detail_deal.combo_type != "OTHER":
-                    deal = detail_deal
+            # Fallback: enrich from combo detail page when component parsing/spec extraction
+            # is incomplete (especially RAM capacity/speed).
+            if _needs_detail_enrichment(deal):
+                # Check cache first — skip the expensive detail page visit
+                cached = self._cache.load_deal_detail(deal.url) if self._cache else None
+                if cached:
+                    cache_hits += 1
+                    logger.info(f"[{self.retailer_name}] Cache hit for detail: {deal.url}")
+                    detail_deal = self._rebuild_deal_from_cache(cached, deal.combo_price, deal.url)
+                    if detail_deal and detail_deal.combo_type != "OTHER":
+                        deal = detail_deal
+                else:
+                    logger.info(f"[{self.retailer_name}] Incomplete combo metadata, fetching detail page: {deal.url}")
+                    detail_deal = await self._scrape_combo_detail(deal.url)
+                    if detail_deal and detail_deal.combo_type != "OTHER":
+                        # Save to cache for next run
+                        if self._cache:
+                            self._cache.save_deal_detail(deal.url, self._serialize_deal(detail_deal))
+                        deal = detail_deal
 
             if deal.combo_type != "OTHER":
                 deals.append(deal)
+
+        if cache_hits:
+            logger.info(f"[{self.retailer_name}] Detail cache: {cache_hits} hits, skipped {cache_hits} page visits")
 
         logger.info(f"[{self.retailer_name}] Total deals: {len(deals)}")
         return deals
@@ -248,27 +353,51 @@ class NeweggScraper(BaseScraper):
             await self._page.goto(url, wait_until="domcontentloaded")
             await self._delay()
 
-            # Extract product names from combo item elements.
-            # Newegg combo pages list each product as a link with the product title.
-            # Try multiple selector strategies.
+            # Strategy 0 (preferred): parse the explicit "This Combo Includes" swiper.
+            # This section is scoped to the current combo and avoids noisy nav links.
             product_names = []
+            ram_links = []
+            cpu_links = []
+            swiper_items = await self._page.evaluate("""
+                () => {
+                    const root = document.querySelector('#include_item_swiper');
+                    if (!root) return [];
+                    return Array.from(root.querySelectorAll('a.item-cell')).map((a) => ({
+                        text: (a.textContent || '').replace(/\\s+/g, ' ').trim(),
+                        href: a.href || ''
+                    })).filter((x) => x.text && x.href);
+                }
+            """)
+            for item in swiper_items:
+                name = _clean_combo_item_text(item.get("text", ""))
+                if not name:
+                    continue
+                category = _detect_category(name)
+                if category == "unknown":
+                    continue
+                product_names.append(name)
+                if category == "ram":
+                    ram_links.append(item.get("href", ""))
+                elif category == "cpu":
+                    cpu_links.append(item.get("href", ""))
 
             # Strategy 1: Find product links within combo item containers
-            for selector in [".combo-item-info a", ".product-title", ".item-info a"]:
-                els = await self._page.query_selector_all(selector)
-                if els:
-                    for el in els:
-                        text = (await el.inner_text()).strip()
-                        if text and len(text) > 10 and _detect_category(text) != "unknown":
-                            product_names.append(text)
-                    if product_names:
-                        break
+            if not product_names:
+                for selector in [".combo-item-info a", ".product-title", ".item-info a"]:
+                    els = await self._page.query_selector_all(selector)
+                    if els:
+                        for el in els:
+                            text = _clean_combo_item_text((await el.inner_text()).strip())
+                            if text and len(text) > 10 and _detect_category(text) != "unknown":
+                                product_names.append(text)
+                        if product_names:
+                            break
 
             # Strategy 2: Find all links to Newegg product pages
             if not product_names:
                 links = await self._page.query_selector_all("a[href*='/p/N82E']")
                 for link in links:
-                    text = (await link.inner_text()).strip()
+                    text = _clean_combo_item_text((await link.inner_text()).strip())
                     if text and len(text) > 10 and _detect_category(text) != "unknown":
                         product_names.append(text)
 
@@ -313,6 +442,27 @@ class NeweggScraper(BaseScraper):
 
             raw = {"title": " + ".join(unique_names), "price": price_text, "url": url, "components": components}
             deal = parse_combo_item(raw)
+
+            # Final fallback: if RAM is still SKU-only/underspecified, open RAM product page.
+            ram = deal.get_component("ram")
+            if ram and ram.specs.get("capacity_gb", 0) <= 0 and ram_links:
+                extra_specs = await self._extract_ram_specs_from_product_page(ram_links[0])
+                if extra_specs:
+                    ram.specs.update(extra_specs)
+                    if "ddr" not in ram.specs:
+                        ram.specs["ddr"] = 5
+                    deal.ram_name = ram.name
+                    deal.ram_capacity_gb = ram.specs.get("capacity_gb", 0)
+                    deal.ram_speed_mhz = ram.specs.get("speed_mhz", 0)
+
+            # CPU fallback: resolve opaque CPU SKU strings from the CPU product page title.
+            cpu = deal.get_component("cpu")
+            if cpu and cpu_links and _looks_like_cpu_sku(cpu.name):
+                resolved_cpu = await self._extract_cpu_name_from_product_page(cpu_links[0])
+                if resolved_cpu:
+                    cpu.name = resolved_cpu
+                    deal.cpu_name = resolved_cpu
+
             logger.info(f"[{self.retailer_name}] Detail page extracted: {deal.combo_type} "
                         f"({len(components)} components) from {url}")
             return deal
@@ -320,6 +470,118 @@ class NeweggScraper(BaseScraper):
         except Exception as e:
             logger.warning(f"[{self.retailer_name}] Failed to scrape detail page {url}: {e}")
             return None
+
+    async def _extract_ram_specs_from_product_page(self, url: str) -> dict:
+        """Open a RAM product page and extract capacity/speed specs from text."""
+        if not url or not self._context:
+            return {}
+        page = await self._context.new_page()
+        page.set_default_timeout(self.config.request_timeout)
+        try:
+            await page.goto(url, wait_until="domcontentloaded")
+            await self._delay()
+
+            title = ""
+            for selector in ["h1", ".product-title", ".product-title-text"]:
+                el = await page.query_selector(selector)
+                if el:
+                    title = (await el.inner_text()).strip()
+                    if title:
+                        break
+
+            specs = _parse_ram_specs(title)
+            if specs.get("capacity_gb", 0) > 0 and specs.get("speed_mhz", 0) > 0:
+                return specs
+
+            body = await page.inner_text("body")
+            # Focus on short lines likely to contain specs.
+            hints = []
+            for line in body.splitlines():
+                line = " ".join(line.split())
+                if not line or len(line) > 180:
+                    continue
+                lower = line.lower()
+                if any(k in lower for k in ["capacity", "ddr", "memory model", "mhz", "x 16gb", "x16gb"]):
+                    hints.append(line)
+                if len(hints) >= 80:
+                    break
+
+            merged = f"{title}\n" + "\n".join(hints)
+            parsed = _parse_ram_specs(merged)
+            specs.update({k: v for k, v in parsed.items() if v})
+            return specs
+        except Exception as e:
+            logger.debug(f"[{self.retailer_name}] RAM detail lookup failed for {url}: {e}")
+            return {}
+        finally:
+            await page.close()
+
+    async def _extract_cpu_name_from_product_page(self, url: str) -> str:
+        """Open a CPU product page and return a human-readable CPU model title."""
+        if not url or not self._context:
+            return ""
+        page = await self._context.new_page()
+        page.set_default_timeout(self.config.request_timeout)
+        try:
+            await page.goto(url, wait_until="domcontentloaded")
+            await self._delay()
+
+            title = ""
+            for selector in ["h1", ".product-title", ".product-title-text"]:
+                el = await page.query_selector(selector)
+                if el:
+                    title = " ".join((await el.inner_text()).split())
+                    if title:
+                        break
+            return title
+        except Exception as e:
+            logger.debug(f"[{self.retailer_name}] CPU detail lookup failed for {url}: {e}")
+            return ""
+        finally:
+            await page.close()
+
+    @staticmethod
+    def _serialize_deal(deal: ComboDeal) -> dict:
+        """Serialize a deal's detail-page data for caching."""
+        return {
+            "components": [
+                {"name": c.name, "category": c.category, "specs": c.specs}
+                for c in deal.components
+            ],
+            "combo_type": deal.combo_type,
+            "cpu_name": deal.cpu_name,
+            "motherboard_name": deal.motherboard_name,
+            "ram_name": deal.ram_name,
+            "ram_speed_mhz": deal.ram_speed_mhz,
+            "ram_capacity_gb": deal.ram_capacity_gb,
+        }
+
+    @staticmethod
+    def _rebuild_deal_from_cache(cached: dict, combo_price: float, url: str) -> ComboDeal | None:
+        """Reconstruct a ComboDeal from cached detail data + fresh combo price."""
+        components = [
+            Component(
+                name=c["name"],
+                category=c["category"],
+                specs=c.get("specs", {}),
+            )
+            for c in cached.get("components", [])
+        ]
+        if not components:
+            return None
+        deal = ComboDeal(
+            retailer="Newegg",
+            combo_type=cached.get("combo_type", "OTHER"),
+            components=components,
+            combo_price=combo_price,
+            url=url,
+        )
+        deal.cpu_name = cached.get("cpu_name", "")
+        deal.motherboard_name = cached.get("motherboard_name", "")
+        deal.ram_name = cached.get("ram_name", "")
+        deal.ram_speed_mhz = cached.get("ram_speed_mhz", 0)
+        deal.ram_capacity_gb = cached.get("ram_capacity_gb", 0)
+        return deal
 
     async def _extract_combo_item(self, element) -> dict | None:
         """Extract raw combo deal data from a page element."""

@@ -3,6 +3,7 @@ from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+from display_names import shorten_cpu, shorten_ram, shorten_motherboard
 from models import ComboDeal
 
 
@@ -26,6 +27,9 @@ def render_deals_table(deals: list[ComboDeal]) -> str:
     table.add_column("SC", justify="right", width=6)
     table.add_column("MC", justify="right", width=7)
     table.add_column("Motherboard", width=20)
+    table.add_column("MB$", justify="right", width=7)
+    table.add_column("PCIe5x16", width=10)
+    table.add_column("PCIe5M.2", width=9)
     table.add_column("RAM", width=18)
     table.add_column("Speed", width=8)
     table.add_column("Combo$", justify="right", width=8)
@@ -46,12 +50,15 @@ def render_deals_table(deals: list[ComboDeal]) -> str:
             str(i),
             deal.retailer,
             deal.combo_type,
-            deal.cpu_name or "—",
+            shorten_cpu(deal.cpu_name) or "—",
             deal.cpu_cores or "—",
             str(deal.cpu_sc_score) if deal.cpu_sc_score else "—",
             str(deal.cpu_mc_score) if deal.cpu_mc_score else "—",
-            deal.motherboard_name or "—",
-            deal.ram_name or "—",
+            shorten_motherboard(deal.motherboard_name) or "—",
+            f"${deal.mb_amazon_price:,.0f}" if deal.mb_amazon_price else "—",
+            deal.mb_pcie5_x16 or "—",
+            deal.mb_pcie5_m2 or "—",
+            shorten_ram(deal.ram_name) or "—",
             f"{deal.ram_speed_mhz}MHz" if deal.ram_speed_mhz else "—",
             f"${deal.combo_price:,.0f}",
             f"${deal.individual_total:,.0f}" if deal.individual_total else "—",
@@ -63,7 +70,7 @@ def render_deals_table(deals: list[ComboDeal]) -> str:
 
     best = max(deals, key=lambda d: d.savings)
     avg_savings = sum(d.savings for d in deals) / len(deals)
-    console.print(f"\n[bold]Best deal:[/bold] {best.retailer} — {best.cpu_name} combo — saves ${best.savings:,.0f}")
+    console.print(f"\n[bold]Best deal:[/bold] {best.retailer} — {shorten_cpu(best.cpu_name) or best.combo_type} combo — saves ${best.savings:,.0f}")
     console.print(f"[bold]Average savings:[/bold] ${avg_savings:,.0f}")
 
     return console.export_text()

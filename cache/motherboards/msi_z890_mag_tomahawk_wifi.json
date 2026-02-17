@@ -1,0 +1,9 @@
+{
+  "name": "MSI MAG Z890 TOMAHAWK WIFI",
+  "amazon_price": 230.00,
+  "amazon_url": "https://www.amazon.com/MSI-MAG-Z890-Motherboard-Thunderbolt/dp/B0DH6SF5LB",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 1,
+  "retrieved_at": "2026-02-17"
+}

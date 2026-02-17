@@ -1,0 +1,9 @@
+{
+  "name": "ASUS TUF GAMING Z790-PLUS WIFI",
+  "amazon_price": 219.99,
+  "amazon_url": "https://www.amazon.com/ASUS-TUF-Intel%C2%AE12th-Motherboard-Thunderbolt/dp/B0BQD58D96",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 0,
+  "retrieved_at": "2026-02-17"
+}

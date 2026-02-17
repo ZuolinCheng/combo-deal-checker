@@ -71,11 +71,11 @@ def test_full_pipeline(tmp_path):
     # Filter
     filtered = filter_deals(deals, config)
 
-    # Amazon CPU+RAM deal ($459) is under $500 budget min — filtered out
+    # Amazon CPU+RAM deal ($459) now passes budget (>= $100)
     # BHPhoto MB+RAM deal has 16GB RAM — filtered out
-    # Should keep Newegg and MicroCenter deals
-    assert len(filtered) == 2
-    assert all(d.combo_price >= 500 for d in filtered)
+    # Should keep Newegg, MicroCenter, and Amazon deals
+    assert len(filtered) == 3
+    assert all(d.combo_price >= 100 for d in filtered)
     assert all(d.get_component("ram").specs.get("capacity_gb", 0) >= 32 for d in filtered)
 
     # Check enrichment worked
@@ -87,6 +87,7 @@ def test_full_pipeline(tmp_path):
     output = render_deals_table(filtered)
     assert "Newegg" in output
     assert "MicroCenter" in output
+    assert "Amazon" in output
 
     # HTML output
     html_path = render_html_report(filtered, output_dir=str(tmp_path))
@@ -95,4 +96,5 @@ def test_full_pipeline(tmp_path):
         html = f.read()
     assert "Newegg" in html
     assert "MicroCenter" in html
+    assert "Amazon" in html
     assert "sortTable" in html

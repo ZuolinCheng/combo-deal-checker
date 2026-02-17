@@ -1,0 +1,9 @@
+{
+  "name": "MSI MAG X870 TOMAHAWK WIFI",
+  "amazon_price": 274.99,
+  "amazon_url": "https://www.amazon.com/MSI-Tomahawk-Motherboard-Processors-Bluetooth/dp/B0DG3HK897",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 2,
+  "retrieved_at": "2026-02-17"
+}

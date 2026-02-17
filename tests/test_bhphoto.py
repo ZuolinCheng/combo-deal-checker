@@ -1,6 +1,6 @@
 # tests/test_bhphoto.py
 import pytest
-from scrapers.bhphoto import parse_bh_item, BHPhotoScraper
+from scrapers.bhphoto import BHPHOTO_SEARCH_QUERIES, parse_bh_item, BHPhotoScraper
 from config import Config
 
 
@@ -39,3 +39,27 @@ def test_parse_bh_item_mb_ram():
 def test_bhphoto_scraper_init():
     scraper = BHPhotoScraper(Config())
     assert scraper.retailer_name == "BHPhotoScraper"
+
+
+def test_bhphoto_search_queries_include_mb_ram():
+    lowered = [q.lower() for q in BHPHOTO_SEARCH_QUERIES]
+    assert any(
+        "motherboard" in q
+        and ("ram" in q or "memory" in q)
+        and all(token not in q for token in ("cpu", "processor", "ryzen", "intel", "core"))
+        for q in lowered
+    )
+
+
+def test_bhphoto_search_queries_exclude_ddr5_keyword():
+    assert all("ddr5" not in q.lower() for q in BHPHOTO_SEARCH_QUERIES)
+
+
+def test_bhphoto_search_queries_include_cpu_ram():
+    lowered = [q.lower() for q in BHPHOTO_SEARCH_QUERIES]
+    assert any(
+        ("cpu" in q or "processor" in q)
+        and ("ram" in q or "memory" in q)
+        and "motherboard" not in q
+        for q in lowered
+    )

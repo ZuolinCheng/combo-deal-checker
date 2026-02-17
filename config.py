@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 @dataclass
 class Config:
     # Budget
-    min_budget: float = 500.0
-    max_budget: float = 1300.0
+    min_budget: float = 100.0
+    max_budget: float = 2000.0
 
     # RAM requirements
     min_ram_gb: int = 32
@@ -25,6 +25,10 @@ class Config:
 
     # Micro Center location (zip code for pricing)
     microcenter_zip: str = "95054"  # default: Santa Clara, CA
+
+    # Cache
+    cache_dir: str = "cache"
+    price_cache_ttl: int = 28800  # 8 hours in seconds
 
     # Output
     results_dir: str = "results"

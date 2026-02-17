@@ -41,6 +41,11 @@ class ComboDeal:
     ram_speed_mhz: int = 0
     ram_capacity_gb: int = 0
 
+    # Motherboard spec fields (populated from cache/motherboards/*.json)
+    mb_amazon_price: float = 0.0
+    mb_pcie5_x16: str = ""   # e.g. "1 (CPU)", "2 (1C+1B)"
+    mb_pcie5_m2: str = ""    # e.g. "1", "2"
+
     def get_component(self, category: str) -> Component | None:
         for c in self.components:
             if c.category == category:

@@ -1,0 +1,9 @@
+{
+  "name": "GIGABYTE X870E AORUS MASTER X3D ICE",
+  "amazon_price": 599.99,
+  "amazon_url": "https://www.amazon.com/GIGABYTE-X870E-AORUS-X3D-ICE/dp/B0FRV8M4D3",
+  "pcie5_x16_slots": 2,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 2,
+  "retrieved_at": "2026-02-17"
+}

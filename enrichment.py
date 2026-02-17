@@ -1,6 +1,7 @@
 """Enrich combo deals with benchmark scores and parsed specs."""
 from models import ComboDeal
 from benchmarks import BenchmarkLookup
+from mobo_specs import load_mobo_spec, format_pcie5_x16
 
 
 def enrich_deals(deals: list[ComboDeal], benchmark: BenchmarkLookup) -> list[ComboDeal]:
@@ -8,6 +9,7 @@ def enrich_deals(deals: list[ComboDeal], benchmark: BenchmarkLookup) -> list[Com
         _enrich_cpu(deal, benchmark)
         _enrich_ram(deal)
         _enrich_motherboard(deal)
+        _enrich_motherboard_specs(deal)
     return deals
 
 
@@ -37,3 +39,20 @@ def _enrich_motherboard(deal: ComboDeal):
     if not mb:
         return
     deal.motherboard_name = mb.name
+
+
+def _enrich_motherboard_specs(deal: ComboDeal):
+    mb = deal.get_component("motherboard")
+    if not mb:
+        return
+    spec = load_mobo_spec(mb.name)
+    if not spec:
+        return
+    price = spec.get("amazon_price")
+    if price is not None:
+        deal.mb_amazon_price = float(price)
+    deal.mb_pcie5_x16 = format_pcie5_x16(
+        spec.get("pcie5_x16_slots"), spec.get("pcie5_x16_source")
+    )
+    m2 = spec.get("pcie5_m2_slots")
+    deal.mb_pcie5_m2 = str(m2) if m2 is not None else ""

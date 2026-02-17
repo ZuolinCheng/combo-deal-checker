@@ -1,0 +1,9 @@
+{
+  "name": "GIGABYTE Z890 GAMING X WIFI7",
+  "amazon_price": 260.99,
+  "amazon_url": "https://www.amazon.com/GIGABYTE-Z890-WIFI7-Motherboard-EZ-Latch/dp/B0DJP9DBVS",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 1,
+  "retrieved_at": "2026-02-17"
+}

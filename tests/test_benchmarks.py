@@ -72,3 +72,10 @@ def test_lookup_12900k():
     lookup = BenchmarkLookup()
     result = lookup.get_benchmark("Intel Core i9-12900K")
     assert result is not None
+
+
+def test_lookup_9850x():
+    """AMD Ryzen 7 9850X should resolve for benchmark enrichment."""
+    lookup = BenchmarkLookup()
+    result = lookup.get_benchmark("AMD Ryzen 7 9850X")
+    assert result is not None

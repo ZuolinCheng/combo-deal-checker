@@ -1,0 +1,9 @@
+{
+  "name": "MSI PRO Z890-A WIFI",
+  "amazon_price": 170.00,
+  "amazon_url": "https://www.amazon.com/MSI-PRO-WiFi-ProSeries-Motherboard/dp/B0DH6W5M6R",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 1,
+  "retrieved_at": "2026-02-17"
+}

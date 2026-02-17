@@ -1,0 +1,9 @@
+{
+  "name": "ASUS ROG CROSSHAIR X870E DARK HERO",
+  "amazon_price": 699.99,
+  "amazon_url": "https://www.amazon.com/ASUS-ROG-Crosshair-X870E-Motherboard/dp/B0GKR5WNWB",
+  "pcie5_x16_slots": 2,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 2,
+  "retrieved_at": "2026-02-17"
+}

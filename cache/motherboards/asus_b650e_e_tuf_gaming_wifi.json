@@ -1,0 +1,9 @@
+{
+  "name": "ASUS TUF GAMING B650E-E WIFI",
+  "amazon_price": 189.99,
+  "amazon_url": "https://www.amazon.com/ASUS-TUF-GAMING-WIFI-motherboard/dp/B0FBMMDMY6",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 1,
+  "retrieved_at": "2026-02-17"
+}
