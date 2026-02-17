@@ -81,6 +81,12 @@ HTML_TEMPLATE = Template("""\
   tr:hover { background: #1a2a4e; }
   tr.green td { background: rgba(0, 200, 83, 0.15); }
   tr.yellow td { background: rgba(255, 193, 7, 0.15); }
+  tr.high-ram td { border-top: 2px solid #ff9800; border-bottom: 2px solid #ff9800; }
+  tr.high-ram td:first-child { border-left: 2px solid #ff9800; }
+  tr.high-ram td:last-child { border-right: 2px solid #ff9800; }
+  td:nth-child(4), th:nth-child(4) { min-width: 300px; }
+  td:nth-child(8), th:nth-child(8) { min-width: 330px; }
+  td:nth-child(12), th:nth-child(12) { min-width: 300px; }
   a { color: #00d4ff; text-decoration: none; }
   a:hover { text-decoration: underline; }
   .no-deals {
@@ -243,15 +249,17 @@ def _assign_display_names(deals: list[ComboDeal]) -> None:
 
 
 def _assign_row_classes(deals: list[ComboDeal]) -> None:
-    """Assign row_class attribute to each deal based on savings percentage."""
+    """Assign row_class attribute to each deal based on savings and RAM capacity."""
     for deal in deals:
+        classes = []
         pct = deal.savings_percent()
         if pct > 15:
-            deal.row_class = "green"  # type: ignore[attr-defined]
+            classes.append("green")
         elif pct >= 5:
-            deal.row_class = "yellow"  # type: ignore[attr-defined]
-        else:
-            deal.row_class = ""  # type: ignore[attr-defined]
+            classes.append("yellow")
+        if deal.ram_capacity_gb >= 48:
+            classes.append("high-ram")
+        deal.row_class = " ".join(classes)  # type: ignore[attr-defined]
 
 
 def render_html_report(

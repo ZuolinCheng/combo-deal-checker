@@ -1,0 +1,9 @@
+{
+  "name": "MSI MEG X870E ACE MAX",
+  "amazon_price": 649.99,
+  "amazon_url": "https://www.amazon.com/dp/B0G4P65W1J",
+  "pcie5_x16_slots": 2,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 2,
+  "retrieved_at": "2026-02-17"
+}

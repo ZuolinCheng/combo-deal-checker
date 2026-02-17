@@ -69,8 +69,8 @@ def shorten_motherboard(name: str) -> str:
         r"\s+(?:(?:Micro[- ]?|Extended\s+|E-)?ATX\s+)?(?:[Mm]otherboard|[Mm]ainboard)\s*$",
         "", short,
     )
-    # Iteratively strip trailing platform/socket/form-factor noise
-    for _ in range(3):
+    # Iteratively strip trailing platform/socket/form-factor/retailer noise
+    for _ in range(4):
         short = re.sub(
             r"\s+(?:AMD\s+)?(?:AM\d|LGA\s*\d{4})\s*$", "", short, flags=re.IGNORECASE,
         )
@@ -80,4 +80,10 @@ def shorten_motherboard(name: str) -> str:
         short = re.sub(
             r"\s+(?:E-|Extended\s*|Micro[- ]?)?ATX\s*$", "", short, flags=re.IGNORECASE,
         )
+        # Strip "Ultra Core (Series N)" retailer branding (Newegg Z890 pattern)
+        short = re.sub(r"\s+Ultra\s+Core\s*(?:\(Series\s*\d\))?\s*$", "", short, flags=re.IGNORECASE)
+        # Strip trailing "(Series N)" standalone
+        short = re.sub(r"\s*\(Series\s*\d\)\s*$", "", short, flags=re.IGNORECASE)
+        # Strip "AMD RYZEN NNNN" processor family suffix (Newegg B650 pattern)
+        short = re.sub(r"\s+AMD\s+RYZEN\s+\d{4}\s*$", "", short, flags=re.IGNORECASE)
     return short.strip()
