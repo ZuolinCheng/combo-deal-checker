@@ -55,6 +55,11 @@ class AmazonPriceLookup:
                     if component.individual_price > 0:
                         continue
 
+                    # Skip components with unknown category — these are garbage
+                    # names from title parsing (e.g. "14+2+1 80A DrMOS stages")
+                    if component.category == "unknown":
+                        continue
+
                     if component.name in self._cache:
                         component.individual_price = self._cache[component.name]
                         continue

@@ -108,6 +108,35 @@ def test_parse_ram_specs_no_ddr_in_name():
     assert specs.get("capacity_gb") == 32
 
 
+def test_extract_prefix_categories_cpu_mb_memory():
+    """Title prefix 'CPU Motherboard Memory Combo' → [cpu, motherboard, ram]."""
+    from scrapers.newegg import _extract_prefix_categories
+    cats = _extract_prefix_categories("CPU Motherboard Memory Combo - AMD 100-WOF Bundle with MSI MAG X870 + V-Color 32GB")
+    assert cats == ["cpu", "motherboard", "ram"]
+
+
+def test_extract_prefix_categories_reversed_order():
+    """Title prefix 'Motherboard CPU Memory Combo' → [motherboard, cpu, ram]."""
+    from scrapers.newegg import _extract_prefix_categories
+    cats = _extract_prefix_categories("Motherboard CPU Memory Combo - GIGABYTE X870E Bundle with AMD Ryzen + RAM")
+    assert cats == ["motherboard", "cpu", "ram"]
+
+
+def test_extract_prefix_categories_no_prefix():
+    """Titles without a combo prefix return empty list."""
+    from scrapers.newegg import _extract_prefix_categories
+    cats = _extract_prefix_categories("AMD Ryzen 7 9800X3D + ASUS ROG STRIX X870E-E")
+    assert cats == []
+
+
+def test_detect_category_ram_brand_skus():
+    """Truncated RAM names with brand SKU prefixes should be detected as RAM."""
+    from scrapers.newegg import _detect_category
+    assert _detect_category("Corsair CMH32GX5M2B6400C36") == "ram"
+    assert _detect_category("V-Color TMXS516G6400HC40ADC01") == "ram"
+    assert _detect_category("Team Group FF3D516G6000HC38ADC01") == "ram"
+
+
 def test_parse_combo_item_infers_ddr5_when_missing():
     """If RAM component lacks DDR version but search is DDR5, infer DDR5."""
     raw = {

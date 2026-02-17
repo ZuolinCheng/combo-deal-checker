@@ -39,12 +39,22 @@ def check_gpu_compatibility(deal: ComboDeal) -> bool:
 def filter_deals(deals: list[ComboDeal], config: Config) -> list[ComboDeal]:
     filtered = []
     for deal in deals:
-        if all([
-            check_ddr5(deal),
-            check_ram_capacity(deal, min_gb=config.min_ram_gb),
-            check_budget(deal, config.min_budget, config.max_budget),
-            check_gpu_compatibility(deal),
-        ]):
+        reasons = []
+        if not check_ddr5(deal):
+            reasons.append("not DDR5")
+        if not check_ram_capacity(deal, min_gb=config.min_ram_gb):
+            ram = deal.get_component("ram")
+            cap = ram.specs.get("capacity_gb", 0) if ram else 0
+            reasons.append(f"RAM {cap}GB < {config.min_ram_gb}GB")
+        if not check_budget(deal, config.min_budget, config.max_budget):
+            reasons.append(f"price ${deal.combo_price:.0f} outside ${config.min_budget:.0f}-${config.max_budget:.0f}")
+        if not check_gpu_compatibility(deal):
+            reasons.append("GPU incompatible")
+
+        if reasons:
+            logger.debug(f"Filtered out [{deal.retailer}] {deal.combo_type} ${deal.combo_price:.0f} "
+                         f"({deal.cpu_name or 'no CPU'}) — {', '.join(reasons)} | {deal.url}")
+        else:
             filtered.append(deal)
     filtered.sort(key=lambda d: (-d.savings, -d.cpu_sc_score))
     return filtered
