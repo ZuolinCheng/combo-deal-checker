@@ -11,6 +11,9 @@ cache/*
 logs/
 results/
 
+# Secrets
+.env
+
 # IDE
 .vscode/
 .idea/

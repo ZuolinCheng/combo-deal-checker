@@ -84,6 +84,9 @@ HTML_TEMPLATE = Template("""\
   tr.high-ram td { border-top: 2px solid #ff9800; border-bottom: 2px solid #ff9800; }
   tr.high-ram td:first-child { border-left: 2px solid #ff9800; }
   tr.high-ram td:last-child { border-right: 2px solid #ff9800; }
+  tr.new-deal td { border-top: 2px solid #ff1744; border-bottom: 2px solid #ff1744; }
+  tr.new-deal td:first-child { border-left: 2px solid #ff1744; }
+  tr.new-deal td:last-child { border-right: 2px solid #ff1744; }
   td:nth-child(4), th:nth-child(4) { min-width: 300px; }
   td:nth-child(8), th:nth-child(8) { min-width: 330px; }
   td:nth-child(12), th:nth-child(12) { min-width: 300px; }
@@ -248,8 +251,8 @@ def _assign_display_names(deals: list[ComboDeal]) -> None:
         deal.display_ram = shorten_ram(deal.ram_name)  # type: ignore[attr-defined]
 
 
-def _assign_row_classes(deals: list[ComboDeal]) -> None:
-    """Assign row_class attribute to each deal based on savings and RAM capacity."""
+def _assign_row_classes(deals: list[ComboDeal], new_urls: set[str] | None = None) -> None:
+    """Assign row_class attribute to each deal based on savings, RAM capacity, and newness."""
     for deal in deals:
         classes = []
         pct = deal.savings_percent()
@@ -259,25 +262,29 @@ def _assign_row_classes(deals: list[ComboDeal]) -> None:
             classes.append("yellow")
         if deal.ram_capacity_gb >= 48:
             classes.append("high-ram")
+        if new_urls and deal.url in new_urls:
+            classes.append("new-deal")
         deal.row_class = " ".join(classes)  # type: ignore[attr-defined]
 
 
 def render_html_report(
     deals: list[ComboDeal],
     output_dir: str = "results",
+    new_urls: set[str] | None = None,
 ) -> str:
     """Render deals to a timestamped HTML report file.
 
     Args:
         deals: List of ComboDeal objects to render.
         output_dir: Directory to write the HTML file into.
+        new_urls: URLs of deals not seen in the previous run (highlighted with red box).
 
     Returns:
         Absolute path to the generated HTML file.
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    _assign_row_classes(deals)
+    _assign_row_classes(deals, new_urls=new_urls)
     _assign_display_names(deals)
 
     # Compute summary stats

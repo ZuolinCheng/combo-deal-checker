@@ -19,6 +19,7 @@ from price_lookup import AmazonPriceLookup
 from filters import filter_deals
 from output.terminal import render_deals_table
 from output.html import render_html_report
+from notifications import load_seen_urls, send_discord_notifications, send_discord_file
 
 # Set up logging
 logging.basicConfig(
@@ -34,7 +35,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _load_env(path: str = ".env"):
+    """Load key=value pairs from .env file into os.environ."""
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip())
+
+
 async def main():
+    _load_env()
     config = Config()
 
     # Parse CLI args
@@ -98,12 +112,23 @@ async def main():
     filtered = filter_deals(all_deals, config)
     logger.info(f"Deals after filtering: {len(filtered)}")
 
+    # Determine which deals are new (before marking them as seen)
+    seen_urls = load_seen_urls()
+    new_urls = {d.url for d in filtered if d.url and d.url not in seen_urls}
+
     # Output
     output = render_deals_table(filtered)
     print(output)
 
-    html_path = render_html_report(filtered, output_dir=config.results_dir)
+    html_path = render_html_report(filtered, output_dir=config.results_dir, new_urls=new_urls)
     logger.info(f"HTML report saved to: {html_path}")
+
+    # Send Discord notifications for new deals + upload HTML report
+    notified = send_discord_notifications(filtered, config.discord_webhook_url)
+    if notified:
+        logger.info(f"Notified {notified} new deal(s) via Discord")
+    if config.discord_webhook_url and filtered:
+        send_discord_file(html_path, config.discord_webhook_url, "Full report attached")
 
     # Persist cache for next run
     cache.save()

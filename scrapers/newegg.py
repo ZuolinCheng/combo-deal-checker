@@ -312,7 +312,15 @@ class NeweggScraper(BaseScraper):
         # Now it's safe to navigate because we no longer hold element handles.
         deals = []
         cache_hits = 0
+        skipped_non_combo = 0
         for raw in all_raw_items:
+            # Only accept real combo deal pages — skip laptops and single products
+            url = raw.get("url", "")
+            if "ComboDealDetails" not in url:
+                skipped_non_combo += 1
+                logger.debug(f"[{self.retailer_name}] Skipped non-combo URL: {url}")
+                continue
+
             deal = parse_combo_item(raw)
             if deal.combo_type == "OTHER":
                 logger.debug(f"[{self.retailer_name}] Skipped OTHER: {raw.get('title', '')[:80]}")
@@ -341,6 +349,8 @@ class NeweggScraper(BaseScraper):
             if deal.combo_type != "OTHER":
                 deals.append(deal)
 
+        if skipped_non_combo:
+            logger.info(f"[{self.retailer_name}] Skipped {skipped_non_combo} non-combo items (laptops/single products)")
         if cache_hits:
             logger.info(f"[{self.retailer_name}] Detail cache: {cache_hits} hits, skipped {cache_hits} page visits")
 

@@ -1,4 +1,5 @@
 """Configuration for combo deal checker."""
+import os
 from dataclasses import dataclass, field
 
 
@@ -33,6 +34,11 @@ class Config:
     # Output
     results_dir: str = "results"
     logs_dir: str = "logs"
+
+    # Discord notifications
+    discord_webhook_url: str = field(
+        default_factory=lambda: os.environ.get("DISCORD_WEBHOOK_URL", "")
+    )
 
     # Browser settings
     viewport_width: int = 1920
