@@ -55,6 +55,16 @@ def test_check_budget_too_high():
     assert check_budget(deal, 500, 1300) is False
 
 
+def test_filter_deals_removes_out_of_stock():
+    config = Config()
+    in_stock = _make_deal(ram_specs={"ddr": 5, "capacity_gb": 32}, combo_price=800)
+    out_of_stock = _make_deal(ram_specs={"ddr": 5, "capacity_gb": 32}, combo_price=750)
+    out_of_stock.in_stock = False
+    filtered = filter_deals([in_stock, out_of_stock], config)
+    assert len(filtered) == 1
+    assert filtered[0].combo_price == 800
+
+
 def test_filter_deals_integration():
     config = Config()
     deals = [

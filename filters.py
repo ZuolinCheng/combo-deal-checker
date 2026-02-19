@@ -40,6 +40,8 @@ def filter_deals(deals: list[ComboDeal], config: Config) -> list[ComboDeal]:
     filtered = []
     for deal in deals:
         reasons = []
+        if not deal.in_stock:
+            reasons.append("out of stock")
         if not check_ddr5(deal):
             reasons.append("not DDR5")
         if not check_ram_capacity(deal, min_gb=config.min_ram_gb):

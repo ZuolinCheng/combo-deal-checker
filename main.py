@@ -13,13 +13,18 @@ from scrapers.newegg import NeweggScraper
 from scrapers.amazon import AmazonScraper
 from scrapers.microcenter import MicroCenterScraper
 from scrapers.bhphoto import BHPhotoScraper
+from scrapers.ram import NeweggRAMScraper, AmazonRAMScraper, MicroCenterRAMScraper, BHPhotoRAMScraper
 from benchmarks import BenchmarkLookup
 from enrichment import enrich_deals
 from price_lookup import AmazonPriceLookup
 from filters import filter_deals
-from output.terminal import render_deals_table
+from ram_filters import filter_ram_deals
+from output.terminal import render_deals_table, render_ram_table
 from output.html import render_html_report
-from notifications import load_seen_urls, send_discord_notifications, send_discord_file
+from notifications import (
+    load_seen_urls, send_discord_notifications, send_ram_discord_notifications,
+    send_discord_file, find_expired_deals, send_discord_expired_notifications,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -112,22 +117,84 @@ async def main():
     filtered = filter_deals(all_deals, config)
     logger.info(f"Deals after filtering: {len(filtered)}")
 
+    # --- Standalone DDR5 RAM Search ---
+    logger.info("\n" + "=" * 60)
+    logger.info("Standalone DDR5 RAM Search — Starting")
+    logger.info("=" * 60)
+
+    ram_scrapers = [
+        NeweggRAMScraper(config),
+        AmazonRAMScraper(config),
+        MicroCenterRAMScraper(config),
+        BHPhotoRAMScraper(config),
+    ]
+
+    all_ram_deals = []
+    ram_seen_urls: set[str] = set()
+
+    for scraper in ram_scrapers:
+        name = scraper.retailer_name
+        logger.info(f"\n--- RAM: Scraping {name} ---")
+        try:
+            ram_deals = await scraper.run()
+            for deal in ram_deals:
+                if deal.url and deal.url not in ram_seen_urls:
+                    ram_seen_urls.add(deal.url)
+                    all_ram_deals.append(deal)
+            scraper_results[f"RAM-{name}"] = {"status": "ok", "count": len(ram_deals)}
+            logger.info(f"RAM {name}: found {len(ram_deals)} deals")
+        except Exception as e:
+            scraper_results[f"RAM-{name}"] = {"status": "error", "error": str(e)}
+            logger.error(f"RAM {name}: failed — {e}")
+
+    logger.info(f"Total raw RAM deals: {len(all_ram_deals)}")
+
+    # Look up Amazon reference prices for RAM deals
+    all_ram_deals = await price_lookup.lookup_ram_prices(all_ram_deals)
+
+    # Filter RAM deals
+    filtered_ram = filter_ram_deals(all_ram_deals)
+    logger.info(f"RAM deals after filtering: {len(filtered_ram)}")
+
     # Determine which deals are new (before marking them as seen)
     seen_urls = load_seen_urls()
     new_urls = {d.url for d in filtered if d.url and d.url not in seen_urls}
+    new_ram_urls = {d.url for d in filtered_ram if d.url and d.url not in seen_urls}
 
     # Output
     output = render_deals_table(filtered)
+    ram_output = render_ram_table(filtered_ram)
     print(output)
+    print(ram_output)
 
-    html_path = render_html_report(filtered, output_dir=config.results_dir, new_urls=new_urls)
+    html_path = render_html_report(
+        filtered,
+        output_dir=config.results_dir,
+        new_urls=new_urls,
+        ram_deals=filtered_ram,
+        new_ram_urls=new_ram_urls,
+    )
     logger.info(f"HTML report saved to: {html_path}")
 
     # Send Discord notifications for new deals + upload HTML report
     notified = send_discord_notifications(filtered, config.discord_webhook_url)
     if notified:
         logger.info(f"Notified {notified} new deal(s) via Discord")
-    if config.discord_webhook_url and filtered:
+    ram_notified = send_ram_discord_notifications(filtered_ram, config.discord_webhook_url)
+    if ram_notified:
+        logger.info(f"Notified {ram_notified} new RAM deal(s) via Discord")
+
+    # Notify about expired deals (OOS or disappeared)
+    oos_deals, disappeared_urls = find_expired_deals(
+        all_deals, all_ram_deals, seen_urls, scraper_results,
+    )
+    expired_notified = send_discord_expired_notifications(
+        oos_deals, disappeared_urls, config.discord_webhook_url,
+    )
+    if expired_notified:
+        logger.info(f"Notified {expired_notified} expired deal(s) via Discord")
+
+    if config.discord_webhook_url and (filtered or filtered_ram):
         send_discord_file(html_path, config.discord_webhook_url, "Full report attached")
 
     # Persist cache for next run

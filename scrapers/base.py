@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from config import Config
-from models import ComboDeal
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ class BaseScraper(ABC):
             await self._page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await self._delay()
 
-    async def run(self) -> list[ComboDeal]:
+    async def run(self) -> list:
         """Run the scraper with retry logic."""
         for attempt in range(1, self.config.max_retries + 1):
             try:
@@ -83,6 +82,6 @@ class BaseScraper(ABC):
                 await self._close_browser()
 
     @abstractmethod
-    async def scrape(self) -> list[ComboDeal]:
+    async def scrape(self) -> list:
         """Scrape combo deals. Implemented by each retailer."""
         ...

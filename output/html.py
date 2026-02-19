@@ -172,9 +172,49 @@ HTML_TEMPLATE = Template("""\
 <div class="no-deals">No deals found.</div>
 {% endif %}
 
+{% if ram_deals %}
+<h2 style="color: #e040fb; margin-top: 30px;">Standalone DDR5 RAM Deals</h2>
+<div class="meta">Found: {{ ram_deals|length }} deals</div>
+
+<table id="ramTable" style="margin-top: 15px;">
+<thead>
+<tr>
+  <th class="sortable" onclick="sortById('ramTable', 0)">#</th>
+  <th class="sortable" onclick="sortById('ramTable', 1)">Retailer</th>
+  <th class="sortable" onclick="sortById('ramTable', 2)">RAM Name</th>
+  <th class="sortable" onclick="sortById('ramTable', 3)">Capacity</th>
+  <th class="sortable" onclick="sortById('ramTable', 4)">Speed</th>
+  <th class="sortable" onclick="sortById('ramTable', 5)">Price</th>
+  <th class="sortable" onclick="sortById('ramTable', 6)">Amazon$</th>
+  <th class="sortable" onclick="sortById('ramTable', 7)">Save$</th>
+  <th>URL</th>
+</tr>
+</thead>
+<tbody>
+{% for deal in ram_deals %}
+<tr class="{{ deal.row_class }}">
+  <td>{{ loop.index }}</td>
+  <td>{{ deal.retailer }}</td>
+  <td>{{ deal.display_name }}</td>
+  <td>{{ deal.capacity_gb }}GB</td>
+  <td>{{ deal.speed_mhz }}MHz</td>
+  <td>${{ "%.2f"|format(deal.price) }}</td>
+  <td>{{ "$%.2f"|format(deal.amazon_price) if deal.amazon_price else "\u2014" }}</td>
+  <td>{{ "$%.2f"|format(deal.savings) if deal.savings > 0 else "\u2014" }}</td>
+  <td><a href="{{ deal.url }}" target="_blank">Link</a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+
 <script>
 function sortTable(colIndex) {
-  var table = document.getElementById("dealsTable");
+  sortById("dealsTable", colIndex);
+}
+function sortById(tableId, colIndex) {
+  var table = document.getElementById(tableId);
+  if (!table) return;
   var tbody = table.querySelector("tbody");
   var rows = Array.from(tbody.querySelectorAll("tr"));
   var ascending = table.dataset.sortCol === String(colIndex)
@@ -267,10 +307,32 @@ def _assign_row_classes(deals: list[ComboDeal], new_urls: set[str] | None = None
         deal.row_class = " ".join(classes)  # type: ignore[attr-defined]
 
 
+def _prepare_ram_deals(
+    ram_deals: list | None,
+    new_ram_urls: set[str] | None = None,
+) -> list:
+    """Assign display_name and row_class to RAM deals for HTML rendering."""
+    if not ram_deals:
+        return []
+    for deal in ram_deals:
+        deal.display_name = shorten_ram(deal.name)  # type: ignore[attr-defined]
+        classes = []
+        if deal.savings > 30:
+            classes.append("green")
+        elif deal.savings > 10:
+            classes.append("yellow")
+        if new_ram_urls and deal.url in new_ram_urls:
+            classes.append("new-deal")
+        deal.row_class = " ".join(classes)  # type: ignore[attr-defined]
+    return ram_deals
+
+
 def render_html_report(
     deals: list[ComboDeal],
     output_dir: str = "results",
     new_urls: set[str] | None = None,
+    ram_deals: list | None = None,
+    new_ram_urls: set[str] | None = None,
 ) -> str:
     """Render deals to a timestamped HTML report file.
 
@@ -278,6 +340,8 @@ def render_html_report(
         deals: List of ComboDeal objects to render.
         output_dir: Directory to write the HTML file into.
         new_urls: URLs of deals not seen in the previous run (highlighted with red box).
+        ram_deals: List of RAMDeal objects for standalone RAM section.
+        new_ram_urls: URLs of RAM deals not seen in previous run.
 
     Returns:
         Absolute path to the generated HTML file.
@@ -286,6 +350,7 @@ def render_html_report(
 
     _assign_row_classes(deals, new_urls=new_urls)
     _assign_display_names(deals)
+    prepared_ram = _prepare_ram_deals(ram_deals, new_ram_urls)
 
     # Compute summary stats
     best_savings = 0.0
@@ -305,6 +370,7 @@ def render_html_report(
 
     html = HTML_TEMPLATE.render(
         deals=deals,
+        ram_deals=prepared_ram,
         generated_at=generated_at,
         best_savings=best_savings,
         avg_savings=avg_savings,

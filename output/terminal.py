@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 from display_names import shorten_cpu, shorten_ram, shorten_motherboard
-from models import ComboDeal
+from models import ComboDeal, RAMDeal
 
 
 def render_deals_table(deals: list[ComboDeal]) -> str:
@@ -73,4 +73,49 @@ def render_deals_table(deals: list[ComboDeal]) -> str:
     console.print(f"\n[bold]Best deal:[/bold] {best.retailer} — {shorten_cpu(best.cpu_name) or best.combo_type} combo — saves ${best.savings:,.0f}")
     console.print(f"[bold]Average savings:[/bold] ${avg_savings:,.0f}")
 
+    return console.export_text()
+
+
+def render_ram_table(deals: list[RAMDeal]) -> str:
+    """Render standalone RAM deals as a Rich table. Returns string representation."""
+    console = Console(record=True, width=200)
+
+    if not deals:
+        console.print("[dim]No standalone RAM deals found.[/dim]")
+        return console.export_text()
+
+    console.print(f"\n[bold]Standalone DDR5 RAM Deals — Found: {len(deals)}[/bold]\n")
+
+    table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Retailer", width=10)
+    table.add_column("RAM Name", width=45)
+    table.add_column("Capacity", width=8)
+    table.add_column("Speed", width=8)
+    table.add_column("Price", justify="right", width=8)
+    table.add_column("Amazon$", justify="right", width=8)
+    table.add_column("Save$", justify="right", width=8)
+    table.add_column("URL", width=30)
+
+    for i, deal in enumerate(deals, 1):
+        if deal.savings > 30:
+            style = "green"
+        elif deal.savings > 10:
+            style = "yellow"
+        else:
+            style = "white"
+
+        table.add_row(
+            str(i),
+            deal.retailer,
+            shorten_ram(deal.name),
+            f"{deal.capacity_gb}GB",
+            f"{deal.speed_mhz}MHz" if deal.speed_mhz else "—",
+            f"${deal.price:,.2f}",
+            f"${deal.amazon_price:,.2f}" if deal.amazon_price else "—",
+            Text(f"${deal.savings:,.2f}", style=style) if deal.savings > 0 else Text("—", style="dim"),
+            deal.url[:30] if deal.url else "—",
+        )
+
+    console.print(table)
     return console.export_text()

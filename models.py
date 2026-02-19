@@ -41,6 +41,9 @@ class ComboDeal:
     ram_speed_mhz: int = 0
     ram_capacity_gb: int = 0
 
+    # Stock availability (False = out of stock, filtered before output)
+    in_stock: bool = True
+
     # Motherboard spec fields (populated from cache/motherboards/*.json)
     mb_amazon_price: float = 0.0
     mb_pcie5_x16: str = ""   # e.g. "1 (CPU)", "2 (1C+1B)"
@@ -60,3 +63,18 @@ class ComboDeal:
         if self.individual_total <= 0:
             return 0.0
         return (self.savings / self.individual_total) * 100
+
+
+@dataclass
+class RAMDeal:
+    """A standalone DDR5 RAM kit deal from a single retailer."""
+    retailer: str
+    name: str
+    capacity_gb: int = 0
+    speed_mhz: int = 0
+    ddr_version: int = 5
+    price: float = 0.0
+    amazon_price: float = 0.0
+    savings: float = 0.0  # amazon_price - price (positive = retailer is cheaper)
+    url: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())

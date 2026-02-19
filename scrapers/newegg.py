@@ -313,6 +313,7 @@ class NeweggScraper(BaseScraper):
         deals = []
         cache_hits = 0
         skipped_non_combo = 0
+        stock_checked_urls: set[str] = set()  # URLs already stock-checked during enrichment
         for raw in all_raw_items:
             # Only accept real combo deal pages — skip laptops and single products
             url = raw.get("url", "")
@@ -345,6 +346,7 @@ class NeweggScraper(BaseScraper):
                         if self._cache:
                             self._cache.save_deal_detail(deal.url, self._serialize_deal(detail_deal))
                         deal = detail_deal
+                        stock_checked_urls.add(deal.url)
 
             if deal.combo_type != "OTHER":
                 deals.append(deal)
@@ -354,8 +356,46 @@ class NeweggScraper(BaseScraper):
         if cache_hits:
             logger.info(f"[{self.retailer_name}] Detail cache: {cache_hits} hits, skipped {cache_hits} page visits")
 
-        logger.info(f"[{self.retailer_name}] Total deals: {len(deals)}")
+        # Phase 3: Check stock status for deals that weren't checked during enrichment.
+        needs_stock_check = [d for d in deals if d.url not in stock_checked_urls]
+        if needs_stock_check:
+            logger.info(f"[{self.retailer_name}] Checking stock status for {len(needs_stock_check)} deals")
+            for deal in needs_stock_check:
+                deal.in_stock = await self._check_combo_stock(deal.url)
+                if not deal.in_stock:
+                    logger.info(f"[{self.retailer_name}] Out of stock: {deal.url}")
+
+        oos_count = sum(1 for d in deals if not d.in_stock)
+        if oos_count:
+            logger.info(f"[{self.retailer_name}] {oos_count} deal(s) out of stock")
+
+        logger.info(f"[{self.retailer_name}] Total deals: {len(deals)} ({len(deals) - oos_count} in stock)")
         return deals
+
+    async def _is_combo_in_stock(self, page) -> bool:
+        """Check whether the currently loaded combo detail page is in stock."""
+        return await page.evaluate("""
+            () => {
+                const text = document.body.innerText || '';
+                return !(/OUT OF STOCK/i.test(text));
+            }
+        """)
+
+    async def _check_combo_stock(self, url: str) -> bool:
+        """Open a combo detail page in a new tab and return stock status."""
+        if not url or not self._context:
+            return True
+        page = await self._context.new_page()
+        page.set_default_timeout(self.config.request_timeout)
+        try:
+            await page.goto(url, wait_until="domcontentloaded")
+            await self._delay()
+            return await self._is_combo_in_stock(page)
+        except Exception as e:
+            logger.debug(f"[{self.retailer_name}] Stock check failed for {url}: {e}")
+            return True  # assume in-stock if check fails
+        finally:
+            await page.close()
 
     async def _scrape_combo_detail(self, url: str) -> ComboDeal | None:
         """Visit a combo deal detail page to extract full component info."""
@@ -452,6 +492,9 @@ class NeweggScraper(BaseScraper):
 
             raw = {"title": " + ".join(unique_names), "price": price_text, "url": url, "components": components}
             deal = parse_combo_item(raw)
+
+            # Check stock status while we're on the detail page
+            deal.in_stock = await self._is_combo_in_stock(self._page)
 
             # Final fallback: if RAM is still SKU-only/underspecified, open RAM product page.
             ram = deal.get_component("ram")
