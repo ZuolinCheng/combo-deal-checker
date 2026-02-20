@@ -22,8 +22,9 @@ from ram_filters import filter_ram_deals
 from output.terminal import render_deals_table, render_ram_table
 from output.html import render_html_report
 from notifications import (
-    load_seen_urls, send_discord_notifications, send_ram_discord_notifications,
-    send_discord_file, find_expired_deals, send_discord_expired_notifications,
+    load_seen_urls, normalize_url, send_discord_notifications,
+    send_ram_discord_notifications, send_discord_file, find_expired_deals,
+    send_discord_expired_notifications,
 )
 
 # Set up logging
@@ -158,8 +159,8 @@ async def main():
 
     # Determine which deals are new (before marking them as seen)
     seen_urls = load_seen_urls()
-    new_urls = {d.url for d in filtered if d.url and d.url not in seen_urls}
-    new_ram_urls = {d.url for d in filtered_ram if d.url and d.url not in seen_urls}
+    new_urls = {d.url for d in filtered if d.url and normalize_url(d.url) not in seen_urls}
+    new_ram_urls = {d.url for d in filtered_ram if d.url and normalize_url(d.url) not in seen_urls}
 
     # Output
     output = render_deals_table(filtered)

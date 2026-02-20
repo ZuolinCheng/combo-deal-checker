@@ -4,7 +4,7 @@
 
 PROJECT_DIR="/mnt/Work2/Projects/combo-deal-checker"
 PYTHON="$PROJECT_DIR/.venv/bin/python3"
-EXPIRY_DATE="2026-02-21"  # 3 days from 2026-02-18
+EXPIRY_DATE="2026-02-22"  # 3 days from 2026-02-19
 
 # Check if expired
 TODAY=$(date +%Y-%m-%d)

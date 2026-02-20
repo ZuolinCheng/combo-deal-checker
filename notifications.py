@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import subprocess
 import urllib.request
 from datetime import datetime
@@ -10,16 +11,32 @@ from models import ComboDeal
 
 logger = logging.getLogger(__name__)
 
+_AMAZON_ASIN_RE = re.compile(r"/dp/([A-Z0-9]{10})")
+
+
+def normalize_url(url: str) -> str:
+    """Normalize a deal URL to a stable canonical form.
+
+    Amazon search-result URLs contain volatile query params (qid, dib, sr)
+    that change every request.  Collapse them to ``/dp/{ASIN}`` so the same
+    product isn't treated as a different deal on every scrape run.
+    """
+    if "amazon.com" in url:
+        m = _AMAZON_ASIN_RE.search(url)
+        if m:
+            return f"https://www.amazon.com/dp/{m.group(1)}"
+    return url
+
 SEEN_DEALS_FILE = os.path.join("cache", "seen_deals.json")
 
 
 def load_seen_urls() -> set[str]:
-    """Load previously-notified deal URLs from disk."""
+    """Load previously-notified deal URLs from disk (normalized)."""
     if not os.path.exists(SEEN_DEALS_FILE):
         return set()
     try:
         with open(SEEN_DEALS_FILE, "r") as f:
-            return set(json.load(f))
+            return {normalize_url(u) for u in json.load(f)}
     except (json.JSONDecodeError, OSError):
         return set()
 
@@ -79,7 +96,7 @@ def send_discord_notifications(deals: list[ComboDeal], webhook_url: str) -> int:
         return 0
 
     seen_urls = load_seen_urls()
-    new_deals = [d for d in deals if d.url and d.url not in seen_urls]
+    new_deals = [d for d in deals if d.url and normalize_url(d.url) not in seen_urls]
 
     if not new_deals:
         logger.info("No new deals to notify about")
@@ -117,9 +134,9 @@ def send_discord_notifications(deals: list[ComboDeal], webhook_url: str) -> int:
             logger.error(f"Failed to send Discord notification: {e}")
             return 0
 
-    # Mark all new deals as seen
+    # Mark all new deals as seen (normalized)
     for deal in new_deals:
-        seen_urls.add(deal.url)
+        seen_urls.add(normalize_url(deal.url))
     _save_seen_urls(seen_urls)
 
     return len(new_deals)
@@ -159,7 +176,7 @@ def send_ram_discord_notifications(deals: list, webhook_url: str) -> int:
         return 0
 
     seen_urls = load_seen_urls()
-    new_deals = [d for d in deals if d.url and d.url not in seen_urls]
+    new_deals = [d for d in deals if d.url and normalize_url(d.url) not in seen_urls]
 
     if not new_deals:
         logger.info("No new RAM deals to notify about")
@@ -197,7 +214,7 @@ def send_ram_discord_notifications(deals: list, webhook_url: str) -> int:
             return 0
 
     for deal in new_deals:
-        seen_urls.add(deal.url)
+        seen_urls.add(normalize_url(deal.url))
     _save_seen_urls(seen_urls)
 
     return len(new_deals)
@@ -280,9 +297,9 @@ def find_expired_deals(
         (oos_deals, disappeared_urls) — OOS deals have full ComboDeal data,
         disappeared URLs are bare strings for deals no longer in any scraper result.
     """
-    # All URLs scraped this run (regardless of filtering)
-    current_urls = {d.url for d in all_deals if d.url}
-    current_urls.update(d.url for d in all_ram_deals if d.url)
+    # All URLs scraped this run (regardless of filtering), normalized
+    current_urls = {normalize_url(d.url) for d in all_deals if d.url}
+    current_urls.update(normalize_url(d.url) for d in all_ram_deals if d.url)
 
     # OOS combo deals that were previously notified about
     oos_deals = [d for d in all_deals if not d.in_stock and d.url in seen_urls]
