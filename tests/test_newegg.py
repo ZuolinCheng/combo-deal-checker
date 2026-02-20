@@ -223,3 +223,37 @@ def test_parse_ram_specs_vendor_sku_patterns():
     patriot = _parse_ram_specs("Patriot Memory VEB516G6030W")
     assert patriot.get("capacity_gb") == 16
     assert patriot.get("speed_mhz") == 6000
+
+
+def test_stock_signals_prefers_combo_stock_for_combo_flag():
+    from scrapers.newegg import _stock_signals_indicate_in_stock
+
+    assert _stock_signals_indicate_in_stock({"combo_stock_for_combo": 0}) is False
+    assert _stock_signals_indicate_in_stock({"combo_stock_for_combo": 1}) is True
+
+
+def test_stock_signals_uses_inventory_text_when_flag_missing():
+    from scrapers.newegg import _stock_signals_indicate_in_stock
+
+    assert _stock_signals_indicate_in_stock({
+        "inventory_texts": ["OUT OF STOCK."],
+        "wide_button_texts": ["Add to cart"],
+    }) is False
+    assert _stock_signals_indicate_in_stock({
+        "inventory_texts": ["In stock. Limit 1 per customer."],
+        "wide_button_texts": ["Auto notify"],
+    }) is True
+
+
+def test_stock_signals_ignores_policy_out_of_stock_phrase():
+    from scrapers.newegg import _stock_signals_indicate_in_stock
+
+    # False-positive case from live page: "out of stock" appears in policy text,
+    # but purchase CTA is still active.
+    assert _stock_signals_indicate_in_stock({
+        "buy_box_text": (
+            "Combos may be removed from orders if any item is out of stock, "
+            "or if you order a quantity beyond the set limit."
+        ),
+        "wide_button_texts": ["Add to cart"],
+    }) is True

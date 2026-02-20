@@ -193,6 +193,63 @@ def _extract_prefix_categories(title: str) -> list[str]:
     return [category_map[w.lower()] for w in words if w.lower() in category_map]
 
 
+def _normalize_stock_text(value: str | None) -> str:
+    """Normalize stock-related text for robust case-insensitive matching."""
+    return " ".join((value or "").split()).strip().lower()
+
+
+def _normalize_stock_text_list(values: list[str] | None) -> list[str]:
+    """Normalize and filter a list of stock-related text snippets."""
+    if not values:
+        return []
+    return [text for text in (_normalize_stock_text(v) for v in values) if text]
+
+
+def _stock_signals_indicate_in_stock(signals: dict) -> bool:
+    """Infer combo stock status from scoped page signals.
+
+    Priority:
+    1. Structured page state (`StockForCombo`) when available.
+    2. Inventory text in the buy area.
+    3. Primary CTA button text (Add to cart vs Auto notify).
+    4. Buy-box fallback text.
+
+    Returns True when status is unknown to avoid false negatives from transient page issues.
+    """
+    if not isinstance(signals, dict):
+        return True
+
+    combo_stock = signals.get("combo_stock_for_combo")
+    if isinstance(combo_stock, bool):
+        return combo_stock
+    if isinstance(combo_stock, (int, float)):
+        return combo_stock > 0
+    if isinstance(combo_stock, str):
+        stripped = combo_stock.strip()
+        if stripped.isdigit():
+            return int(stripped) > 0
+
+    inventory_texts = _normalize_stock_text_list(signals.get("inventory_texts"))
+    if any("in stock" in text for text in inventory_texts):
+        return True
+    if any("out of stock" in text for text in inventory_texts):
+        return False
+
+    wide_button_texts = _normalize_stock_text_list(signals.get("wide_button_texts"))
+    if any("add to cart" in text for text in wide_button_texts):
+        return True
+    if any("auto notify" in text or "notify me" in text for text in wide_button_texts):
+        return False
+
+    buy_box_text = _normalize_stock_text(signals.get("buy_box_text"))
+    if "in stock" in buy_box_text and "out of stock" not in buy_box_text:
+        return True
+    if "out of stock" in buy_box_text and "in stock" not in buy_box_text:
+        return False
+
+    return True
+
+
 def _detect_combo_type(components: list[Component]) -> str:
     """Determine combo type from component categories."""
     categories = {c.category for c in components}
@@ -374,12 +431,28 @@ class NeweggScraper(BaseScraper):
 
     async def _is_combo_in_stock(self, page) -> bool:
         """Check whether the currently loaded combo detail page is in stock."""
-        return await page.evaluate("""
+        signals = await page.evaluate("""
             () => {
-                const text = document.body.innerText || '';
-                return !(/OUT OF STOCK/i.test(text));
+                const normalize = (value) => (value || '')
+                    .replace(/\\s+/g, ' ')
+                    .trim();
+
+                const collectTexts = (selector) =>
+                    Array.from(document.querySelectorAll(selector))
+                        .map((el) => normalize(el.innerText || el.textContent))
+                        .filter(Boolean);
+
+                const buyBox = document.querySelector('.product-buy-box, .product-pane, .product-buy');
+
+                return {
+                    combo_stock_for_combo: window.__initialState__?.ComboDetail?.StockForCombo,
+                    inventory_texts: collectTexts('.product-inventory, .product-stock, .atc-btn-area .btn-message'),
+                    wide_button_texts: collectTexts('button.btn-wide'),
+                    buy_box_text: normalize(buyBox?.innerText || buyBox?.textContent),
+                };
             }
         """)
+        return _stock_signals_indicate_in_stock(signals)
 
     async def _check_combo_stock(self, url: str) -> bool:
         """Open a combo detail page in a new tab and return stock status."""
