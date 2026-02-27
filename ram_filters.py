@@ -33,6 +33,25 @@ def check_ram_price(deal: RAMDeal) -> bool:
     return 0 < deal.price <= limit
 
 
+def pre_filter_ram_deals(deals: list[RAMDeal]) -> list[RAMDeal]:
+    """Fast pre-filter that removes RAM deals not needing Amazon price lookup.
+
+    Applies all checks that don't depend on Amazon reference prices:
+    DDR5, capacity tier, and price limits.
+    """
+    kept = []
+    removed = 0
+    for deal in deals:
+        if (check_ram_ddr5(deal)
+                and check_ram_capacity(deal)
+                and check_ram_price(deal)):
+            kept.append(deal)
+        else:
+            removed += 1
+    logger.info(f"RAM pre-filter: kept {len(kept)}, removed {removed} deals")
+    return kept
+
+
 def filter_ram_deals(deals: list[RAMDeal]) -> list[RAMDeal]:
     """Filter and sort standalone RAM deals.
 

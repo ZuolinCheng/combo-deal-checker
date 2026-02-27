@@ -36,6 +36,26 @@ def check_gpu_compatibility(deal: ComboDeal) -> bool:
     return True
 
 
+def pre_filter_deals(deals: list[ComboDeal], config: Config) -> list[ComboDeal]:
+    """Fast pre-filter that removes deals not needing Amazon price lookup.
+
+    Applies all checks that don't depend on Amazon reference prices:
+    stock status, DDR5, RAM capacity, and budget range.
+    """
+    kept = []
+    removed = 0
+    for deal in deals:
+        if (deal.in_stock
+                and check_ddr5(deal)
+                and check_ram_capacity(deal, min_gb=config.min_ram_gb)
+                and check_budget(deal, config.min_budget, config.max_budget)):
+            kept.append(deal)
+        else:
+            removed += 1
+    logger.info(f"Pre-filter: kept {len(kept)}, removed {removed} deals")
+    return kept
+
+
 def filter_deals(deals: list[ComboDeal], config: Config) -> list[ComboDeal]:
     filtered = []
     for deal in deals:

@@ -29,7 +29,7 @@ class Config:
 
     # Cache
     cache_dir: str = "cache"
-    price_cache_ttl: int = 28800  # 8 hours in seconds
+    price_cache_ttl: int = 86400  # 24 hours in seconds
 
     # Output
     results_dir: str = "results"

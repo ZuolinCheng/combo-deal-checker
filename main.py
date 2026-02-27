@@ -4,6 +4,7 @@ import asyncio
 import logging
 import sys
 import os
+import time
 from datetime import datetime
 
 from config import Config
@@ -17,8 +18,8 @@ from scrapers.ram import NeweggRAMScraper, AmazonRAMScraper, MicroCenterRAMScrap
 from benchmarks import BenchmarkLookup
 from enrichment import enrich_deals
 from price_lookup import AmazonPriceLookup
-from filters import filter_deals
-from ram_filters import filter_ram_deals
+from filters import pre_filter_deals, filter_deals
+from ram_filters import pre_filter_ram_deals, filter_ram_deals
 from output.terminal import render_deals_table, render_ram_table
 from output.html import render_html_report
 from notifications import (
@@ -80,6 +81,10 @@ async def main():
     logger.info(f"RAM: {config.ram_type} >= {config.min_ram_gb}GB")
     logger.info("=" * 60)
 
+    # Timing tracker
+    timings: list[tuple[str, float]] = []
+    pipeline_start = time.monotonic()
+
     # Initialize scrapers
     scrapers = [
         NeweggScraper(config, cache=cache),
@@ -95,6 +100,7 @@ async def main():
     for scraper in scrapers:
         name = scraper.retailer_name
         logger.info(f"\n--- Scraping {name} ---")
+        t0 = time.monotonic()
         try:
             deals = await scraper.run()
             all_deals.extend(deals)
@@ -103,19 +109,32 @@ async def main():
         except Exception as e:
             scraper_results[name] = {"status": "error", "error": str(e)}
             logger.error(f"{name}: failed — {e}")
+        elapsed = time.monotonic() - t0
+        timings.append((f"Scrape {name}", elapsed))
+        logger.info(f"{name}: took {elapsed:.1f}s")
 
     logger.info(f"\nTotal raw deals: {len(all_deals)}")
 
     # Enrich with benchmark scores
+    t0 = time.monotonic()
     benchmark = BenchmarkLookup()
     all_deals = enrich_deals(all_deals, benchmark)
+    elapsed = time.monotonic() - t0
+    timings.append(("Enrichment", elapsed))
 
-    # Look up Amazon reference prices for savings calculation
+    # Pre-filter before price lookup (skip deals that would fail regardless)
+    pre_filtered = pre_filter_deals(all_deals, config)
+
+    # Look up Amazon reference prices for savings calculation (only for pre-filtered)
+    t0 = time.monotonic()
     price_lookup = AmazonPriceLookup(config, cache=cache)
-    all_deals = await price_lookup.lookup_prices(all_deals)
+    pre_filtered = await price_lookup.lookup_prices(pre_filtered)
+    elapsed = time.monotonic() - t0
+    timings.append(("Amazon price lookup (combos)", elapsed))
+    logger.info(f"Amazon price lookup (combos): took {elapsed:.1f}s")
 
-    # Filter deals
-    filtered = filter_deals(all_deals, config)
+    # Final filter and sort by savings
+    filtered = filter_deals(pre_filtered, config)
     logger.info(f"Deals after filtering: {len(filtered)}")
 
     # --- Standalone DDR5 RAM Search ---
@@ -136,6 +155,7 @@ async def main():
     for scraper in ram_scrapers:
         name = scraper.retailer_name
         logger.info(f"\n--- RAM: Scraping {name} ---")
+        t0 = time.monotonic()
         try:
             ram_deals = await scraper.run()
             for deal in ram_deals:
@@ -147,14 +167,24 @@ async def main():
         except Exception as e:
             scraper_results[f"RAM-{name}"] = {"status": "error", "error": str(e)}
             logger.error(f"RAM {name}: failed — {e}")
+        elapsed = time.monotonic() - t0
+        timings.append((f"Scrape RAM-{name}", elapsed))
+        logger.info(f"RAM {name}: took {elapsed:.1f}s")
 
     logger.info(f"Total raw RAM deals: {len(all_ram_deals)}")
 
-    # Look up Amazon reference prices for RAM deals
-    all_ram_deals = await price_lookup.lookup_ram_prices(all_ram_deals)
+    # Pre-filter RAM before price lookup (skip deals that would fail regardless)
+    pre_filtered_ram = pre_filter_ram_deals(all_ram_deals)
 
-    # Filter RAM deals
-    filtered_ram = filter_ram_deals(all_ram_deals)
+    # Look up Amazon reference prices for RAM deals (only for pre-filtered)
+    t0 = time.monotonic()
+    pre_filtered_ram = await price_lookup.lookup_ram_prices(pre_filtered_ram)
+    elapsed = time.monotonic() - t0
+    timings.append(("Amazon price lookup (RAM)", elapsed))
+    logger.info(f"Amazon price lookup (RAM): took {elapsed:.1f}s")
+
+    # Final filter and sort by savings
+    filtered_ram = filter_ram_deals(pre_filtered_ram)
     logger.info(f"RAM deals after filtering: {len(filtered_ram)}")
 
     # Determine which deals are new (before marking them as seen)
@@ -168,6 +198,7 @@ async def main():
     print(output)
     print(ram_output)
 
+    # --- Generate full report (all deals) ---
     html_path = render_html_report(
         filtered,
         output_dir=config.results_dir,
@@ -176,6 +207,23 @@ async def main():
         new_ram_urls=new_ram_urls,
     )
     logger.info(f"HTML report saved to: {html_path}")
+
+    # --- Generate 64GB+ subset report ---
+    filtered_64 = [d for d in filtered if d.ram_capacity_gb >= 64]
+    filtered_ram_64 = [d for d in filtered_ram if d.capacity_gb >= 64]
+    new_urls_64 = {u for u in new_urls if any(d.url == u for d in filtered_64)}
+    new_ram_urls_64 = {u for u in new_ram_urls if any(d.url == u for d in filtered_ram_64)}
+
+    html_path_64 = render_html_report(
+        filtered_64,
+        output_dir=config.results_dir,
+        new_urls=new_urls_64,
+        ram_deals=filtered_ram_64,
+        new_ram_urls=new_ram_urls_64,
+        filename_prefix="deals_64gb",
+    )
+    logger.info(f"64GB+ HTML report saved to: {html_path_64}")
+    logger.info(f"64GB+ subset: {len(filtered_64)} combo deals, {len(filtered_ram_64)} RAM deals")
 
     # Send Discord notifications for new deals + upload HTML report
     notified = send_discord_notifications(filtered, config.discord_webhook_url)
@@ -195,12 +243,23 @@ async def main():
     if expired_notified:
         logger.info(f"Notified {expired_notified} expired deal(s) via Discord")
 
-    if config.discord_webhook_url and (filtered or filtered_ram):
-        send_discord_file(html_path, config.discord_webhook_url, "Full report attached")
+    # Upload 64GB+ report to Discord
+    if config.discord_webhook_url and (filtered_64 or filtered_ram_64):
+        send_discord_file(html_path_64, config.discord_webhook_url, "64GB+ report attached")
 
     # Persist cache for next run
     cache.save()
     logger.info("Cache saved")
+
+    # Print timing summary
+    total_elapsed = time.monotonic() - pipeline_start
+    timings.sort(key=lambda x: x[1], reverse=True)
+    print("\n--- Timing Breakdown ---")
+    for label, secs in timings:
+        pct = (secs / total_elapsed * 100) if total_elapsed > 0 else 0
+        print(f"  {label:40s} {secs:6.1f}s  ({pct:4.1f}%)")
+    print(f"  {'TOTAL':40s} {total_elapsed:6.1f}s")
+    logger.info(f"Total pipeline time: {total_elapsed:.1f}s")
 
     # Print scraper status summary
     print("\n--- Scraper Status ---")

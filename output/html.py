@@ -333,6 +333,7 @@ def render_html_report(
     new_urls: set[str] | None = None,
     ram_deals: list | None = None,
     new_ram_urls: set[str] | None = None,
+    filename_prefix: str = "deals",
 ) -> str:
     """Render deals to a timestamped HTML report file.
 
@@ -342,6 +343,7 @@ def render_html_report(
         new_urls: URLs of deals not seen in the previous run (highlighted with red box).
         ram_deals: List of RAMDeal objects for standalone RAM section.
         new_ram_urls: URLs of RAM deals not seen in previous run.
+        filename_prefix: Prefix for the output filename (default "deals").
 
     Returns:
         Absolute path to the generated HTML file.
@@ -365,7 +367,7 @@ def render_html_report(
 
     now = datetime.now()
     generated_at = now.strftime("%Y-%m-%d %H:%M:%S")
-    filename = f"deals_{now.strftime('%Y-%m-%d_%H%M')}.html"
+    filename = f"{filename_prefix}_{now.strftime('%Y-%m-%d_%H%M')}.html"
     filepath = os.path.join(output_dir, filename)
 
     html = HTML_TEMPLATE.render(
