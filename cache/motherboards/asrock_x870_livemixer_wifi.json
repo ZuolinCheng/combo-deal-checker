@@ -1,0 +1,9 @@
+{
+  "name": "ASRock X870 LiveMixer WiFi",
+  "amazon_price": 189.99,
+  "amazon_url": "https://www.amazon.com/ASRock-X870-LiveMixer-WiFi-Motherboard/dp/B0FN44YQKY",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 2,
+  "retrieved_at": "2026-02-23"
+}

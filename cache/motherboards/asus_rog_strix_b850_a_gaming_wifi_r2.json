@@ -1,0 +1,9 @@
+{
+  "name": "ASUS ROG STRIX B850-A GAMING WIFI R2",
+  "amazon_price": 243.00,
+  "amazon_url": "https://www.amazon.com/ASUS-ROG-R2-Motherboard-Networking/dp/B0FPYD5GQP",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 1,
+  "retrieved_at": "2026-02-26"
+}

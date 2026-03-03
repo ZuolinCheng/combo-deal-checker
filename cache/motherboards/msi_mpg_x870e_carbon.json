@@ -1,0 +1,9 @@
+{
+  "name": "MSI MPG X870E CARBON WIFI",
+  "amazon_price": 479.17,
+  "amazon_url": "https://www.amazon.com/MSI-MPG-X870E-Motherboard-Processors/dp/B0DG3QW9TJ",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 2,
+  "retrieved_at": "2026-02-17"
+}

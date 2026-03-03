@@ -1,0 +1,9 @@
+{
+  "name": "ASUS ROG STRIX B850-I GAMING WIFI",
+  "amazon_price": 346.99,
+  "amazon_url": "https://www.amazon.com/ASUS-Mini-ITX-Motherboard-Overclocking-Networking/dp/B0DHCQ1MPZ",
+  "pcie5_x16_slots": 1,
+  "pcie5_x16_source": "CPU",
+  "pcie5_m2_slots": 2,
+  "retrieved_at": "2026-02-23"
+}
