@@ -242,6 +242,31 @@ async def main():
     oos_deals, disappeared_urls = find_expired_deals(
         all_deals_48plus, all_ram_48plus, seen_urls, scraper_results,
     )
+    # Skip expired notifications for Amazon standalone RAM deals
+    ram_urls_file = os.path.join(config.cache_dir, "seen_ram_urls.json")
+    seen_ram_urls: set[str] = set()
+    if os.path.exists(ram_urls_file):
+        try:
+            with open(ram_urls_file, "r") as f:
+                seen_ram_urls = set(json.load(f))
+        except (json.JSONDecodeError, OSError):
+            pass
+    # Update with current run's RAM URLs
+    for d in all_ram_deals:
+        if d.url:
+            seen_ram_urls.add(normalize_url(d.url))
+    amazon_ram_disappeared = {u for u in disappeared_urls
+                              if "amazon.com" in u and u in seen_ram_urls}
+    disappeared_urls -= amazon_ram_disappeared
+    # Clean up: remove silently-expired Amazon RAM from both tracking sets
+    if amazon_ram_disappeared:
+        seen_ram_urls -= amazon_ram_disappeared
+        seen_urls -= amazon_ram_disappeared
+        from notifications import _save_seen_urls
+        _save_seen_urls(seen_urls)
+        logger.info(f"Silently expired {len(amazon_ram_disappeared)} Amazon RAM deal(s)")
+    with open(ram_urls_file, "w") as f:
+        json.dump(sorted(seen_ram_urls), f, indent=2)
     expired_notified = send_discord_expired_notifications(
         oos_deals, disappeared_urls, config.discord_webhook_url,
     )
