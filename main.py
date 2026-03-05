@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Combo Deal Checker — main entry point."""
 import asyncio
+import json
 import logging
 import sys
 import os
@@ -225,17 +226,21 @@ async def main():
     logger.info(f"64GB+ HTML report saved to: {html_path_64}")
     logger.info(f"64GB+ subset: {len(filtered_64)} combo deals, {len(filtered_ram_64)} RAM deals")
 
-    # Send Discord notifications for new deals + upload HTML report
-    notified = send_discord_notifications(filtered, config.discord_webhook_url)
+    # Send Discord notifications for new deals (only RAM >= 48GB)
+    filtered_48plus = [d for d in filtered if d.ram_capacity_gb and d.ram_capacity_gb >= 48]
+    notified = send_discord_notifications(filtered_48plus, config.discord_webhook_url)
     if notified:
-        logger.info(f"Notified {notified} new deal(s) via Discord")
-    ram_notified = send_ram_discord_notifications(filtered_ram, config.discord_webhook_url)
+        logger.info(f"Notified {notified} new deal(s) via Discord (48GB+ only)")
+    filtered_ram_48plus = [d for d in filtered_ram if d.capacity_gb >= 48]
+    ram_notified = send_ram_discord_notifications(filtered_ram_48plus, config.discord_webhook_url)
     if ram_notified:
         logger.info(f"Notified {ram_notified} new RAM deal(s) via Discord")
 
-    # Notify about expired deals (OOS or disappeared)
+    # Notify about expired deals (OOS or disappeared) — only 48GB+ RAM
+    all_deals_48plus = [d for d in all_deals if d.ram_capacity_gb and d.ram_capacity_gb >= 48]
+    all_ram_48plus = [d for d in all_ram_deals if d.capacity_gb >= 48]
     oos_deals, disappeared_urls = find_expired_deals(
-        all_deals, all_ram_deals, seen_urls, scraper_results,
+        all_deals_48plus, all_ram_48plus, seen_urls, scraper_results,
     )
     expired_notified = send_discord_expired_notifications(
         oos_deals, disappeared_urls, config.discord_webhook_url,
@@ -243,9 +248,27 @@ async def main():
     if expired_notified:
         logger.info(f"Notified {expired_notified} expired deal(s) via Discord")
 
-    # Upload 64GB+ report to Discord
+    # Upload 64GB+ report to Discord only if the deal set changed
     if config.discord_webhook_url and (filtered_64 or filtered_ram_64):
-        send_discord_file(html_path_64, config.discord_webhook_url, "64GB+ report attached")
+        current_64_urls = sorted(
+            {d.url for d in filtered_64 if d.url}
+            | {d.url for d in filtered_ram_64 if d.url}
+        )
+        cache_64_file = os.path.join(config.cache_dir, "deals_64gb_urls.json")
+        prev_64_urls = []
+        if os.path.exists(cache_64_file):
+            try:
+                with open(cache_64_file, "r") as f:
+                    prev_64_urls = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        if current_64_urls != prev_64_urls:
+            send_discord_file(html_path_64, config.discord_webhook_url, "64GB+ report attached")
+            logger.info("64GB+ report uploaded (deal set changed)")
+        else:
+            logger.info("64GB+ report unchanged — skipping Discord upload")
+        with open(cache_64_file, "w") as f:
+            json.dump(current_64_urls, f, indent=2)
 
     # Persist cache for next run
     cache.save()

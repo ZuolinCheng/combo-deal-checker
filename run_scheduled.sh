@@ -5,7 +5,7 @@
 
 PROJECT_DIR="/Users/zc/Desktop/ClaudeCode/Projects/Computer/combo-deal-checker"
 PYTHON="/opt/anaconda3/bin/python"
-EXPIRY_DATE="2026-03-15"  # extended from 2026-03-05
+EXPIRY_DATE="2026-03-22"  # extended from 2026-03-15
 
 # Check if expired
 TODAY=$(date +%Y-%m-%d)
